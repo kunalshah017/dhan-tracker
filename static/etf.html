@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ETF Recommendations | Dhan Tracker</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Login Screen */
+        .login-screen {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .login-box {
+            background: var(--bg-secondary);
+            padding: 40px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-box h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+
+        .login-box input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--bg-card);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+
+        .login-box button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+        }
+
+        .login-error {
+            color: var(--danger);
+            text-align: center;
+            margin-top: 12px;
+            display: none;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            display: none;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--bg-card);
+            flex-wrap: wrap;
+            gap: 16px;
+        }
+
+        header h1 {
+            font-size: 24px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .nav-link {
+            color: var(--accent);
+            text-decoration: none;
+            padding: 10px 20px;
+            background: var(--bg-card);
+            border-radius: 8px;
+            transition: background 0.2s;
+        }
+
+        .nav-link:hover {
+            background: var(--bg-secondary);
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        .btn-sm {
+            padding: 6px 12px;
+            font-size: 12px;
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Filters */
+        .filters {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+            align-items: center;
+        }
+
+        .filter-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .filter-group label {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .filter-group select,
+        .filter-group input {
+            padding: 8px 12px;
+            border: 1px solid var(--bg-card);
+            border-radius: 6px;
+            background: var(--bg-secondary);
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        /* Stats */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .stat-value.positive {
+            color: var(--success);
+        }
+
+        .stat-value.negative {
+            color: var(--danger);
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            min-width: 800px;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--bg-card);
+        }
+
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 13px;
+            text-transform: uppercase;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        th:hover {
+            color: var(--text-primary);
+        }
+
+        td {
+            font-size: 14px;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        .discount-cell {
+            font-weight: 600;
+        }
+
+        .discount-cell.good {
+            color: var(--success);
+        }
+
+        .discount-cell.bad {
+            color: var(--danger);
+        }
+
+        /* Buy Modal */
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal {
+            background: var(--bg-secondary);
+            padding: 30px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .modal h2 {
+            margin-bottom: 20px;
+        }
+
+        .modal-field {
+            margin-bottom: 16px;
+        }
+
+        .modal-field label {
+            display: block;
+            color: var(--text-secondary);
+            margin-bottom: 6px;
+            font-size: 14px;
+        }
+
+        .modal-field input,
+        .modal-field select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--bg-card);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 16px;
+        }
+
+        .modal-info {
+            background: var(--bg-card);
+            padding: 12px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-size: 14px;
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .modal-actions button {
+            flex: 1;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.success {
+            background: var(--success);
+        }
+
+        .toast.error {
+            background: var(--danger);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th,
+            td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-box">
+            <h1>🔒 ETF Recommendations</h1>
+            <form id="loginForm">
+                <input type="password" id="password" placeholder="Enter password" required>
+                <button type="submit">Login</button>
+            </form>
+            <p id="loginError" class="login-error">Invalid password</p>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="dashboard">
+        <div class="container">
+            <header>
+                <h1>📈 ETF Buy Recommendations</h1>
+                <div class="header-actions">
+                    <a href="/" class="nav-link">📊 Portfolio</a>
+                    <button class="btn btn-secondary" onclick="refreshData()">🔄 Refresh</button>
+                    <button class="btn btn-danger" onclick="logout()">Logout</button>
+                </div>
+            </header>
+
+            <!-- Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total ETFs</div>
+                    <div class="stat-value" id="totalEtfs">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Trading at Discount</div>
+                    <div class="stat-value positive" id="discountCount">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Best Discount</div>
+                    <div class="stat-value positive" id="bestDiscount">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Trading at Premium</div>
+                    <div class="stat-value negative" id="premiumCount">-</div>
+                </div>
+            </div>
+
+            <!-- Filters -->
+            <div class="filters">
+                <div class="filter-group">
+                    <label>Show:</label>
+                    <select id="filterType" onchange="applyFilters()">
+                        <option value="all">All ETFs</option>
+                        <option value="discount" selected>Discount Only</option>
+                        <option value="premium">Premium Only</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Category:</label>
+                    <select id="filterCategory" onchange="applyFilters()">
+                        <option value="all">All Categories</option>
+                        <option value="gold">Gold</option>
+                        <option value="silver">Silver</option>
+                        <option value="nifty">Nifty Index</option>
+                        <option value="bank">Bank</option>
+                        <option value="it">IT</option>
+                        <option value="other">Other</option>
+                    </select>
+                </div>
+                <div class="filter-group">
+                    <label>Min Turnover (Cr):</label>
+                    <input type="number" id="filterTurnover" value="0" min="0" step="1" onchange="applyFilters()">
+                </div>
+            </div>
+
+            <!-- ETF Table -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">ETFs by Discount/Premium</h2>
+                    <span id="tableCount" style="color: var(--text-secondary);">-</span>
+                </div>
+                <div class="table-container">
+                    <div id="etfTable">
+                        <div class="loading">Loading ETF data...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Buy Modal -->
+    <div id="buyModal" class="modal-overlay" style="display: none;">
+        <div class="modal">
+            <h2>Buy ETF</h2>
+            <div class="modal-info">
+                <strong id="modalSymbol">-</strong><br>
+                LTP: <span id="modalLtp">-</span> | NAV: <span id="modalNav">-</span> |
+                Discount: <span id="modalDiscount">-</span>
+            </div>
+            <div class="modal-field">
+                <label>Quantity</label>
+                <input type="number" id="buyQuantity" min="1" value="1">
+            </div>
+            <div class="modal-field">
+                <label>Order Type</label>
+                <select id="orderType" onchange="togglePriceField()">
+                    <option value="MARKET">Market Order</option>
+                    <option value="LIMIT">Limit Order</option>
+                </select>
+            </div>
+            <div class="modal-field" id="priceField" style="display: none;">
+                <label>Limit Price</label>
+                <input type="number" id="limitPrice" step="0.01" min="0">
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="closeBuyModal()">Cancel</button>
+                <button class="btn btn-success" onclick="placeBuyOrder()">Place Order</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let authPassword = localStorage.getItem('dhan_password') || '';
+        let allEtfs = [];
+
+        // API Helper
+        async function api(endpoint, options = {}) {
+            const response = await fetch(API_BASE + endpoint, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Password': authPassword,
+                    ...options.headers
+                }
+            });
+
+            if (response.status === 401) {
+                logout();
+                throw new Error('Unauthorized');
+            }
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'API Error');
+            }
+
+            return response.json();
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Format currency
+        function formatCurrency(value) {
+            return '₹' + value.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+        }
+
+        // Format volume
+        function formatVolume(value) {
+            if (value >= 10000000) return (value / 10000000).toFixed(2) + ' Cr';
+            if (value >= 100000) return (value / 100000).toFixed(2) + ' L';
+            if (value >= 1000) return (value / 1000).toFixed(1) + ' K';
+            return value.toString();
+        }
+
+        // Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            authPassword = password;
+
+            try {
+                await api('/health');
+                localStorage.setItem('dhan_password', password);
+                showDashboard();
+            } catch (err) {
+                document.getElementById('loginError').style.display = 'block';
+                authPassword = '';
+            }
+        });
+
+        function logout() {
+            localStorage.removeItem('dhan_password');
+            authPassword = '';
+            document.getElementById('loginScreen').style.display = 'flex';
+            document.getElementById('dashboard').style.display = 'none';
+        }
+
+        function showDashboard() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            refreshData();
+        }
+
+        // Refresh data
+        async function refreshData() {
+            await loadEtfData();
+        }
+
+        // Categorize ETF
+        function getCategory(etf) {
+            const symbol = etf.symbol.toUpperCase();
+            const underlying = etf.underlying.toUpperCase();
+
+            if (symbol.includes('GOLD') || underlying.includes('GOLD')) return 'gold';
+            if (symbol.includes('SILVER') || symbol.includes('SILV') || underlying.includes('SILVER')) return 'silver';
+            if (symbol.includes('BANK') || underlying.includes('BANK')) return 'bank';
+            if (symbol.includes('IT') || underlying.includes('IT ')) return 'it';
+            if (symbol.includes('NIFTY') || underlying.includes('NIFTY')) return 'nifty';
+            return 'other';
+        }
+
+        // Load ETF Data
+        async function loadEtfData() {
+            try {
+                const data = await api('/api/etf');
+                allEtfs = data.etfs;
+
+                // Calculate stats
+                const discountEtfs = allEtfs.filter(e => e.discount_premium < 0);
+                const premiumEtfs = allEtfs.filter(e => e.discount_premium > 0);
+                const bestDiscount = discountEtfs.length > 0
+                    ? Math.min(...discountEtfs.map(e => e.discount_premium))
+                    : 0;
+
+                document.getElementById('totalEtfs').textContent = allEtfs.length;
+                document.getElementById('discountCount').textContent = discountEtfs.length;
+                document.getElementById('premiumCount').textContent = premiumEtfs.length;
+                document.getElementById('bestDiscount').textContent = bestDiscount.toFixed(2) + '%';
+
+                applyFilters();
+            } catch (err) {
+                document.getElementById('etfTable').innerHTML = `<p class="loading">Error: ${err.message}</p>`;
+            }
+        }
+
+        // Apply Filters
+        function applyFilters() {
+            const filterType = document.getElementById('filterType').value;
+            const filterCategory = document.getElementById('filterCategory').value;
+            const minTurnover = parseFloat(document.getElementById('filterTurnover').value) || 0;
+
+            let filtered = allEtfs.filter(e => {
+                // Filter by discount/premium
+                if (filterType === 'discount' && e.discount_premium >= 0) return false;
+                if (filterType === 'premium' && e.discount_premium <= 0) return false;
+
+                // Filter by category
+                if (filterCategory !== 'all' && getCategory(e) !== filterCategory) return false;
+
+                // Filter by turnover (convert to crores)
+                if (e.turnover < minTurnover) return false;
+
+                return true;
+            });
+
+            document.getElementById('tableCount').textContent = `Showing ${filtered.length} of ${allEtfs.length}`;
+            renderEtfTable(filtered);
+        }
+
+        // Render ETF Table
+        function renderEtfTable(etfs) {
+            if (etfs.length === 0) {
+                document.getElementById('etfTable').innerHTML = '<p class="loading">No ETFs match your filters</p>';
+                return;
+            }
+
+            let html = `<table>
+                <thead>
+                    <tr>
+                        <th>Symbol</th>
+                        <th>Underlying</th>
+                        <th class="text-right">LTP</th>
+                        <th class="text-right">NAV</th>
+                        <th class="text-right">Discount/Premium</th>
+                        <th class="text-right">Change %</th>
+                        <th class="text-right">Volume</th>
+                        <th class="text-right">Turnover</th>
+                        <th class="text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+            for (const e of etfs) {
+                const discountClass = e.discount_premium < 0 ? 'good' : 'bad';
+                const changeClass = e.pchange >= 0 ? 'positive' : 'negative';
+                const discountBadge = e.discount_premium < -2
+                    ? '<span class="badge badge-success">Great Buy</span>'
+                    : (e.discount_premium < 0 ? '<span class="badge badge-warning">Discount</span>' : '');
+
+                html += `<tr>
+                    <td><strong>${e.symbol}</strong> ${discountBadge}</td>
+                    <td style="max-width: 200px; overflow: hidden; text-overflow: ellipsis;">${e.underlying}</td>
+                    <td class="text-right">${formatCurrency(e.ltp)}</td>
+                    <td class="text-right">${e.nav > 0 ? formatCurrency(e.nav) : '-'}</td>
+                    <td class="text-right discount-cell ${discountClass}">${e.discount_premium.toFixed(2)}%</td>
+                    <td class="text-right ${changeClass}">${e.pchange.toFixed(2)}%</td>
+                    <td class="text-right">${formatVolume(e.volume)}</td>
+                    <td class="text-right">${e.turnover.toFixed(2)} Cr</td>
+                    <td class="text-right">
+                        <button class="btn btn-success btn-sm" onclick="openBuyModal('${e.symbol}', ${e.ltp}, ${e.nav}, ${e.discount_premium})">
+                            Buy
+                        </button>
+                    </td>
+                </tr>`;
+            }
+
+            html += '</tbody></table>';
+            document.getElementById('etfTable').innerHTML = html;
+        }
+
+        // Buy Modal
+        let currentSymbol = '';
+
+        function openBuyModal(symbol, ltp, nav, discount) {
+            currentSymbol = symbol;
+            document.getElementById('modalSymbol').textContent = symbol;
+            document.getElementById('modalLtp').textContent = formatCurrency(ltp);
+            document.getElementById('modalNav').textContent = nav > 0 ? formatCurrency(nav) : '-';
+            document.getElementById('modalDiscount').textContent = discount.toFixed(2) + '%';
+            document.getElementById('limitPrice').value = ltp;
+            document.getElementById('buyQuantity').value = 1;
+            document.getElementById('orderType').value = 'MARKET';
+            document.getElementById('priceField').style.display = 'none';
+            document.getElementById('buyModal').style.display = 'flex';
+        }
+
+        function closeBuyModal() {
+            document.getElementById('buyModal').style.display = 'none';
+        }
+
+        function togglePriceField() {
+            const orderType = document.getElementById('orderType').value;
+            document.getElementById('priceField').style.display = orderType === 'LIMIT' ? 'block' : 'none';
+        }
+
+        async function placeBuyOrder() {
+            const quantity = parseInt(document.getElementById('buyQuantity').value);
+            const orderType = document.getElementById('orderType').value;
+            const price = parseFloat(document.getElementById('limitPrice').value);
+
+            if (quantity < 1) {
+                showToast('Quantity must be at least 1', 'error');
+                return;
+            }
+
+            try {
+                const body = {
+                    symbol: currentSymbol,
+                    quantity: quantity,
+                    order_type: orderType,
+                };
+
+                if (orderType === 'LIMIT') {
+                    body.price = price;
+                }
+
+                const result = await api('/api/etf/buy', {
+                    method: 'POST',
+                    body: JSON.stringify(body),
+                });
+
+                showToast(result.message, 'success');
+                closeBuyModal();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        // Close modal on outside click
+        document.getElementById('buyModal').addEventListener('click', (e) => {
+            if (e.target.id === 'buyModal') closeBuyModal();
+        });
+
+        // Check if already logged in
+        if (authPassword) {
+            api('/health').then(() => showDashboard()).catch(() => logout());
+        }
+    </script>
+</body>
+
+</html>

@@ -266,3 +266,4 @@ class ProtectiveOrder:
             "stopLossPrice": self.stop_loss_price,
             "trailingJump": self.trailing_jump,
         }
+

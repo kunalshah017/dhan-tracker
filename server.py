@@ -5,17 +5,6 @@ A FastAPI server with scheduled portfolio protection.
 Designed for deployment on Azure App Service.
 """
 
-from dhan_tracker.nse_client import NSEClient, NSEError, ETFData
-from dhan_tracker.protection import PortfolioProtector, ProtectionConfig
-from dhan_tracker.config import DhanConfig
-from dhan_tracker.client import DhanClient, DhanAPIError
-import pytz
-from apscheduler.triggers.cron import CronTrigger
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
-from pydantic import BaseModel
-from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
-from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
 import logging
 import os
 import sys
@@ -26,6 +15,19 @@ from typing import Optional
 
 # Add src to path - MUST be before dhan_tracker imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
+
+from fastapi import FastAPI, HTTPException, BackgroundTasks, Request, Depends
+from fastapi.responses import JSONResponse, HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
+import pytz
+
+from dhan_tracker.client import DhanClient, DhanAPIError
+from dhan_tracker.config import DhanConfig
+from dhan_tracker.protection import PortfolioProtector, ProtectionConfig
+from dhan_tracker.nse_client import NSEClient, NSEError, ETFData
 
 
 # Configure logging
