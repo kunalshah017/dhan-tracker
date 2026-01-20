@@ -63,4 +63,3 @@ jobs:
           app-name: "dhan-tracker"
           slot-name: "Production"
           publish-profile: ${{ secrets.AZUREAPPSERVICE_PUBLISHPROFILE_F60780CE87E64D538FD71460004AADBF }}
-          startup-command: "gunicorn --bind=0.0.0.0 --timeout 600 --worker-class uvicorn.workers.UvicornWorker server:app"
