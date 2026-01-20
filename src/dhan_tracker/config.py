@@ -24,6 +24,11 @@ def get_config_file() -> Path | None:
     return None
 
 
+def _has_required_env_vars() -> bool:
+    """Check if required environment variables are already set."""
+    return bool(os.getenv("DHAN_ACCESS_TOKEN") and os.getenv("DHAN_CLIENT_ID"))
+
+
 @dataclass
 class DhanConfig:
     """Dhan API configuration."""
@@ -54,6 +59,21 @@ class DhanConfig:
             client_id=client_id,
             default_stop_loss_percent=stop_loss_percent,
         )
+
+    @classmethod
+    def load(cls) -> "DhanConfig":
+        """Load configuration from environment variables or .env file.
+
+        This is the preferred method for loading config. It:
+        1. First checks if required env vars are already set (Azure App Service)
+        2. Falls back to loading from .env file (local development)
+        """
+        # If env vars are already set (e.g., Azure App Service), use them directly
+        if _has_required_env_vars():
+            return cls.from_env()
+
+        # Otherwise, try to load from .env file
+        return cls.from_file()
 
     @classmethod
     def from_file(cls, filepath: Path | None = None) -> "DhanConfig":

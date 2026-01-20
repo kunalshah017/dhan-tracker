@@ -60,9 +60,9 @@ def get_app_password() -> str:
     if password:
         return password
 
-    # Try loading from config file
+    # Try loading from config file (for local development)
     try:
-        DhanConfig.from_file()  # This sets env vars from .env
+        DhanConfig.load()  # This loads from env vars or .env file
         password = os.getenv("APP_PASSWORD")
         if password:
             return password
@@ -89,7 +89,7 @@ def run_daily_protection():
     logger.info("=" * 60)
 
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
 
         protection_config = ProtectionConfig(
@@ -151,7 +151,7 @@ def run_amo_protection():
     logger.info("=" * 60)
 
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
 
         protection_config = ProtectionConfig(
@@ -325,7 +325,7 @@ async def health(auth: bool = Depends(verify_password)):
 async def get_holdings():
     """Get current portfolio holdings with LTP from NSE."""
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
         holdings = client.get_holdings()
 
@@ -399,7 +399,7 @@ async def get_holdings():
 async def get_protection_status():
     """Get current protection status."""
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
         protection_config = ProtectionConfig(
             stop_loss_percent=config.default_stop_loss_percent,
@@ -435,7 +435,7 @@ async def run_protection(force: bool = True, background_tasks: BackgroundTasks =
     global last_protection_run, last_protection_result
 
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
         protection_config = ProtectionConfig(
             stop_loss_percent=config.default_stop_loss_percent,
@@ -486,7 +486,7 @@ async def run_protection(force: bool = True, background_tasks: BackgroundTasks =
 async def cancel_protection():
     """Cancel all existing protection orders."""
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
         protection_config = ProtectionConfig()
 
@@ -533,7 +533,7 @@ async def run_amo_protection_api(amo_time: str = "OPEN"):
         )
 
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
         protection_config = ProtectionConfig(
             stop_loss_percent=config.default_stop_loss_percent,
@@ -584,7 +584,7 @@ async def run_amo_protection_api(amo_time: str = "OPEN"):
 async def get_orders():
     """Get all super orders."""
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
         orders = client.get_super_orders()
 
@@ -615,7 +615,7 @@ async def get_orders():
 async def get_regular_orders():
     """Get all regular orders (including AMO orders)."""
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
         orders = client.get_orders()
 
@@ -791,7 +791,7 @@ async def buy_etf(order: BuyOrderRequest):
         price: Price for LIMIT orders
     """
     try:
-        config = DhanConfig.from_file()
+        config = DhanConfig.load()
         client = DhanClient(config)
 
         # First, get the security_id for the symbol
