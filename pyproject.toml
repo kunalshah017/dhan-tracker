@@ -1,0 +1,24 @@
+[project]
+name = "dhan-tracker"
+version = "0.1.0"
+description = "Track Dhan portfolio holdings and place protective super orders with stop-loss"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "httpx>=0.27.0",
+    "fastapi>=0.109.0",
+    "uvicorn[standard]>=0.27.0",
+    "apscheduler>=3.10.0",
+    "pytz>=2024.1",
+    "python-dotenv>=1.0.0",
+]
+
+[project.scripts]
+dhan-tracker = "dhan_tracker.cli:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+

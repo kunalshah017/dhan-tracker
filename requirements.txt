@@ -1,0 +1,8 @@
+# Requirements for Azure App Service deployment
+httpx>=0.27.0
+fastapi>=0.109.0
+uvicorn[standard]>=0.27.0
+gunicorn>=21.0.0
+apscheduler>=3.10.0
+pytz>=2024.1
+python-dotenv>=1.0.0

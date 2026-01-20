@@ -1,0 +1,653 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dhan Portfolio Tracker</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #3b82f6;
+            --success: #22c55e;
+            --danger: #ef4444;
+            --warning: #f59e0b;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Login Screen */
+        .login-screen {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+        }
+
+        .login-box {
+            background: var(--bg-secondary);
+            padding: 40px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 400px;
+        }
+
+        .login-box h1 {
+            text-align: center;
+            margin-bottom: 30px;
+            font-size: 24px;
+        }
+
+        .login-box input {
+            width: 100%;
+            padding: 12px 16px;
+            border: 1px solid var(--bg-card);
+            border-radius: 8px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+
+        .login-box button {
+            width: 100%;
+            padding: 12px;
+            background: var(--accent);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .login-box button:hover {
+            opacity: 0.9;
+        }
+
+        .login-error {
+            color: var(--danger);
+            text-align: center;
+            margin-top: 12px;
+            display: none;
+        }
+
+        /* Dashboard */
+        .dashboard {
+            display: none;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid var(--bg-card);
+        }
+
+        header h1 {
+            font-size: 24px;
+        }
+
+        .header-actions {
+            display: flex;
+            gap: 12px;
+        }
+
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: opacity 0.2s;
+        }
+
+        .btn:hover {
+            opacity: 0.9;
+        }
+
+        .btn-primary {
+            background: var(--accent);
+            color: white;
+        }
+
+        .btn-success {
+            background: var(--success);
+            color: white;
+        }
+
+        .btn-danger {
+            background: var(--danger);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: var(--bg-card);
+            color: var(--text-primary);
+        }
+
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        /* Stats Grid */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: var(--bg-secondary);
+            padding: 20px;
+            border-radius: 12px;
+        }
+
+        .stat-label {
+            color: var(--text-secondary);
+            font-size: 14px;
+            margin-bottom: 8px;
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .stat-value.positive {
+            color: var(--success);
+        }
+
+        .stat-value.negative {
+            color: var(--danger);
+        }
+
+        /* Cards */
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+
+        .card-title {
+            font-size: 18px;
+            font-weight: 600;
+        }
+
+        /* Tables */
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--bg-card);
+        }
+
+        th {
+            color: var(--text-secondary);
+            font-weight: 500;
+            font-size: 13px;
+            text-transform: uppercase;
+        }
+
+        td {
+            font-size: 14px;
+        }
+
+        .text-right {
+            text-align: right;
+        }
+
+        .badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+
+        .badge-success {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        .badge-warning {
+            background: rgba(245, 158, 11, 0.2);
+            color: var(--warning);
+        }
+
+        .badge-danger {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--danger);
+        }
+
+        /* Scheduler */
+        .scheduler-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 16px;
+        }
+
+        .job-card {
+            background: var(--bg-card);
+            padding: 16px;
+            border-radius: 8px;
+        }
+
+        .job-name {
+            font-weight: 500;
+            margin-bottom: 8px;
+        }
+
+        .job-time {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        /* Loading */
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: var(--text-secondary);
+        }
+
+        /* Toast */
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            padding: 16px 24px;
+            border-radius: 8px;
+            color: white;
+            font-size: 14px;
+            z-index: 1000;
+            animation: slideIn 0.3s ease;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .toast.success {
+            background: var(--success);
+        }
+
+        .toast.error {
+            background: var(--danger);
+        }
+
+        /* Responsive */
+        @media (max-width: 768px) {
+            .stats-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+
+            table {
+                font-size: 12px;
+            }
+
+            th,
+            td {
+                padding: 8px;
+            }
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Login Screen -->
+    <div id="loginScreen" class="login-screen">
+        <div class="login-box">
+            <h1>🔒 Dhan Tracker</h1>
+            <form id="loginForm">
+                <input type="password" id="password" placeholder="Enter password" required>
+                <button type="submit">Login</button>
+            </form>
+            <p id="loginError" class="login-error">Invalid password</p>
+        </div>
+    </div>
+
+    <!-- Dashboard -->
+    <div id="dashboard" class="dashboard">
+        <div class="container">
+            <header>
+                <h1>📊 Dhan Portfolio Tracker</h1>
+                <div class="header-actions">
+                    <button class="btn btn-primary" onclick="runAMOProtection()">🛡️ Run AMO Protection</button>
+                    <button class="btn btn-secondary" onclick="refreshData()">🔄 Refresh</button>
+                    <button class="btn btn-danger" onclick="logout()">Logout</button>
+                </div>
+            </header>
+
+            <!-- Stats -->
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Total Invested</div>
+                    <div class="stat-value" id="totalInvested">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Current Value</div>
+                    <div class="stat-value" id="currentValue">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Total P&L</div>
+                    <div class="stat-value" id="totalPnl">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Protection Status</div>
+                    <div class="stat-value" id="protectionStatus">-</div>
+                </div>
+            </div>
+
+            <!-- Holdings -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Holdings</h2>
+                </div>
+                <div id="holdingsTable">
+                    <div class="loading">Loading holdings...</div>
+                </div>
+            </div>
+
+            <!-- Pending Orders -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Pending Protection Orders</h2>
+                    <button class="btn btn-danger btn-sm" onclick="cancelAllOrders()">Cancel All</button>
+                </div>
+                <div id="ordersTable">
+                    <div class="loading">Loading orders...</div>
+                </div>
+            </div>
+
+            <!-- Scheduler -->
+            <div class="card">
+                <div class="card-header">
+                    <h2 class="card-title">Scheduler Status</h2>
+                </div>
+                <div id="schedulerInfo" class="scheduler-info">
+                    <div class="loading">Loading scheduler...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        let authPassword = localStorage.getItem('dhan_password') || '';
+
+        // API Helper
+        async function api(endpoint, options = {}) {
+            const response = await fetch(API_BASE + endpoint, {
+                ...options,
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-Password': authPassword,
+                    ...options.headers
+                }
+            });
+
+            if (response.status === 401) {
+                logout();
+                throw new Error('Unauthorized');
+            }
+
+            if (!response.ok) {
+                const error = await response.json();
+                throw new Error(error.detail || 'API Error');
+            }
+
+            return response.json();
+        }
+
+        // Toast
+        function showToast(message, type = 'success') {
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            document.body.appendChild(toast);
+            setTimeout(() => toast.remove(), 3000);
+        }
+
+        // Format currency
+        function formatCurrency(value) {
+            return '₹' + value.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+        }
+
+        // Login
+        document.getElementById('loginForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const password = document.getElementById('password').value;
+            authPassword = password;
+
+            try {
+                await api('/health');
+                localStorage.setItem('dhan_password', password);
+                showDashboard();
+            } catch (err) {
+                document.getElementById('loginError').style.display = 'block';
+                authPassword = '';
+            }
+        });
+
+        function logout() {
+            localStorage.removeItem('dhan_password');
+            authPassword = '';
+            document.getElementById('loginScreen').style.display = 'flex';
+            document.getElementById('dashboard').style.display = 'none';
+        }
+
+        function showDashboard() {
+            document.getElementById('loginScreen').style.display = 'none';
+            document.getElementById('dashboard').style.display = 'block';
+            refreshData();
+        }
+
+        // Refresh all data
+        async function refreshData() {
+            await Promise.all([
+                loadHoldings(),
+                loadOrders(),
+                loadScheduler(),
+                loadProtectionStatus()
+            ]);
+        }
+
+        // Load Holdings
+        async function loadHoldings() {
+            try {
+                const data = await api('/api/holdings');
+
+                document.getElementById('totalInvested').textContent = formatCurrency(data.total_invested);
+                document.getElementById('currentValue').textContent = formatCurrency(data.total_current);
+
+                const pnlClass = data.total_pnl >= 0 ? 'positive' : 'negative';
+                document.getElementById('totalPnl').className = `stat-value ${pnlClass}`;
+                document.getElementById('totalPnl').textContent =
+                    `${formatCurrency(data.total_pnl)} (${data.total_pnl_percent.toFixed(2)}%)`;
+
+                if (data.holdings.length === 0) {
+                    document.getElementById('holdingsTable').innerHTML = '<p class="loading">No holdings found</p>';
+                    return;
+                }
+
+                let html = `<table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th class="text-right">Qty</th>
+                            <th class="text-right">Avg Cost</th>
+                            <th class="text-right">LTP</th>
+                            <th class="text-right">P&L</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                for (const h of data.holdings) {
+                    const pnlClass = h.pnl >= 0 ? 'positive' : 'negative';
+                    html += `<tr>
+                        <td><strong>${h.symbol}</strong></td>
+                        <td class="text-right">${h.quantity}</td>
+                        <td class="text-right">${formatCurrency(h.avg_cost)}</td>
+                        <td class="text-right">${formatCurrency(h.ltp)}</td>
+                        <td class="text-right ${pnlClass}">${formatCurrency(h.pnl)} (${h.pnl_percent.toFixed(1)}%)</td>
+                    </tr>`;
+                }
+
+                html += '</tbody></table>';
+                document.getElementById('holdingsTable').innerHTML = html;
+            } catch (err) {
+                document.getElementById('holdingsTable').innerHTML = `<p class="loading">Error: ${err.message}</p>`;
+            }
+        }
+
+        // Load Orders
+        async function loadOrders() {
+            try {
+                const data = await api('/api/orders/regular');
+                const pending = data.orders.filter(o => ['PENDING', 'TRANSIT'].includes(o.orderStatus));
+
+                if (pending.length === 0) {
+                    document.getElementById('ordersTable').innerHTML = '<p class="loading">No pending orders</p>';
+                    return;
+                }
+
+                let html = `<table>
+                    <thead>
+                        <tr>
+                            <th>Symbol</th>
+                            <th class="text-right">Qty</th>
+                            <th class="text-right">Trigger Price</th>
+                            <th>Type</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>`;
+
+                for (const o of pending) {
+                    const statusClass = o.orderStatus === 'PENDING' ? 'badge-success' : 'badge-warning';
+                    html += `<tr>
+                        <td><strong>${o.tradingSymbol || o.securityId}</strong></td>
+                        <td class="text-right">${o.quantity}</td>
+                        <td class="text-right">${formatCurrency(o.triggerPrice)}</td>
+                        <td>${o.orderType}</td>
+                        <td><span class="badge ${statusClass}">${o.orderStatus}</span></td>
+                    </tr>`;
+                }
+
+                html += '</tbody></table>';
+                document.getElementById('ordersTable').innerHTML = html;
+            } catch (err) {
+                document.getElementById('ordersTable').innerHTML = `<p class="loading">Error: ${err.message}</p>`;
+            }
+        }
+
+        // Load Protection Status
+        async function loadProtectionStatus() {
+            try {
+                const data = await api('/api/protection/status');
+                const protected_pct = data.protection_percent.toFixed(0);
+                document.getElementById('protectionStatus').textContent =
+                    `${data.protected_count}/${data.total_holdings} (${protected_pct}%)`;
+            } catch (err) {
+                document.getElementById('protectionStatus').textContent = 'Error';
+            }
+        }
+
+        // Load Scheduler
+        async function loadScheduler() {
+            try {
+                const data = await api('/api/scheduler/status');
+
+                let html = '';
+                for (const job of data.jobs) {
+                    const nextRun = job.next_run ? new Date(job.next_run).toLocaleString('en-IN') : 'Not scheduled';
+                    html += `<div class="job-card">
+                        <div class="job-name">${job.name}</div>
+                        <div class="job-time">Next: ${nextRun}</div>
+                    </div>`;
+                }
+
+                document.getElementById('schedulerInfo').innerHTML = html || '<p>No scheduled jobs</p>';
+            } catch (err) {
+                document.getElementById('schedulerInfo').innerHTML = `<p class="loading">Error: ${err.message}</p>`;
+            }
+        }
+
+        // Run AMO Protection
+        async function runAMOProtection() {
+            try {
+                showToast('Running AMO protection...', 'success');
+                const data = await api('/api/protection/run-amo', { method: 'POST' });
+                showToast(data.message, 'success');
+                await refreshData();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        // Cancel All Orders
+        async function cancelAllOrders() {
+            if (!confirm('Cancel all pending protection orders?')) return;
+
+            try {
+                const data = await api('/api/protection/cancel', { method: 'POST' });
+                showToast(data.message, 'success');
+                await refreshData();
+            } catch (err) {
+                showToast(err.message, 'error');
+            }
+        }
+
+        // Check if already logged in
+        if (authPassword) {
+            api('/health').then(() => showDashboard()).catch(() => logout());
+        }
+    </script>
+</body>
+
+</html>
