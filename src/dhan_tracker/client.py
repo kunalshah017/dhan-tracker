@@ -1,6 +1,7 @@
 """Dhan API Client for interacting with Dhan Trading APIs."""
 
 import logging
+import os
 from typing import Optional
 
 import httpx
@@ -60,16 +61,13 @@ class DhanClient:
         endpoint: str,
         json: dict | None = None,
         params: dict | None = None,
-        _retry_count: int = 0,
     ) -> dict | list:
-        """Make an API request with automatic token refresh on 401.
+        """Make an API request.
         
-        Args:
-            method: HTTP method (GET, POST, PUT, DELETE)
-            endpoint: API endpoint path
-            json: JSON payload for request body
-            params: Query parameters
-            _retry_count: Internal counter to prevent infinite retry loops (max 1 retry)
+        Note: Token refresh on 401 is NOT implemented here because the Dhan API's
+        /v2/RenewToken endpoint requires a VALID token. If we receive 401, the token
+        has already expired and cannot be refreshed. Instead, tokens are proactively
+        refreshed every 23 hours via scheduled job before they expire.
         """
         try:
             response = self._client.request(
@@ -83,22 +81,7 @@ class DhanClient:
             if response.status_code == 202:
                 return {"status": "accepted"}
 
-            # Check for 401 Unauthorized - token might be expired
-            # Only retry once to prevent infinite loops
-            if response.status_code == 401 and _retry_count == 0:
-                logger.warning("Received 401 Unauthorized. Attempting to refresh token...")
-                try:
-                    # Try to refresh the token
-                    self._refresh_token_internal()
-                    logger.info("Token refreshed successfully. Retrying request...")
-                    
-                    # Retry the request with the new token (increment retry count)
-                    return self._request(method, endpoint, json, params, _retry_count=1)
-                except Exception as refresh_error:
-                    logger.error(f"Token refresh failed: {refresh_error}")
-                    # Fall through to raise the original 401 error
-
-            # Check for other errors
+            # Check for errors
             if response.status_code >= 400:
                 error_msg = f"API Error: {response.status_code}"
                 try:
@@ -106,6 +89,11 @@ class DhanClient:
                     error_msg = error_data.get(
                         "errorMessage", error_data.get("message", error_msg))
                     logger.error(f"API Error Response: {error_data}")
+                    
+                    # Special handling for token expiration
+                    if response.status_code == 401:
+                        logger.error("Token has expired! Please update DHAN_ACCESS_TOKEN in environment variables.")
+                        logger.error("Tokens cannot be refreshed after expiry - they must be renewed BEFORE expiration.")
                 except Exception:
                     error_msg = response.text or error_msg
                     logger.error(f"API Error Text: {response.text}")
@@ -527,6 +515,10 @@ class DhanClient:
         Internal method to refresh the access token.
         Updates the client headers with the new token.
         
+        IMPORTANT: This only works if the current token is still VALID.
+        If the token has already expired (401), this will fail.
+        Use scheduled proactive refresh (every 23 hours) instead.
+        
         Returns:
             New token response dict
             
@@ -543,8 +535,11 @@ class DhanClient:
         )
 
         if response.status_code >= 400:
-            raise DhanAPIError(
-                f"Token refresh failed: {response.text}", response.status_code)
+            error_msg = f"Token refresh failed with status {response.status_code}: {response.text}"
+            logger.error(error_msg)
+            logger.error("This likely means the token has already expired.")
+            logger.error("Tokens must be refreshed BEFORE they expire (within 24 hours of generation).")
+            raise DhanAPIError(error_msg, response.status_code)
 
         token_data = response.json()
         
@@ -563,7 +558,13 @@ class DhanClient:
         # Update the config and client headers with the new token
         self.config.access_token = new_token
         self._client.headers["access-token"] = new_token
-        logger.info("Access token updated successfully")
+        
+        # Also update the environment variable so it persists across requests
+        # This is important for Azure App Service where the config is loaded from env vars
+        os.environ["DHAN_ACCESS_TOKEN"] = new_token
+        
+        logger.info("Access token refreshed and updated successfully")
+        logger.info(f"New token will be valid for next 24 hours")
             
         return token_data
 

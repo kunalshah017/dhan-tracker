@@ -563,7 +563,7 @@ class TestDhanClient:
             assert holdings[0].total_qty == 160
 
     def test_api_error_handling(self, mock_config):
-        """Test API error handling."""
+        """Test API error handling for 401 errors."""
         with patch("httpx.Client") as MockHttpClient:
             mock_response = Mock()
             mock_response.status_code = 401
@@ -579,71 +579,37 @@ class TestDhanClient:
             client = DhanClient(mock_config)
             client._client = mock_client_instance
 
+            # 401 errors should be raised immediately (no auto-refresh on 401)
+            # because token refresh requires a VALID token
             with pytest.raises(DhanAPIError) as exc_info:
                 client.get_holdings()
 
             assert exc_info.value.status_code == 401
 
-    def test_auto_token_refresh_on_401(self, mock_config):
-        """Test automatic token refresh on 401 error."""
-        with patch("httpx.Client") as MockHttpClient, \
-                patch("httpx.post") as mock_post:
+    def test_proactive_token_refresh(self, mock_config):
+        """Test proactive token refresh (when token is still valid)."""
+        with patch("httpx.post") as mock_post:
             
-            # First request returns 401
-            mock_401_response = Mock()
-            mock_401_response.status_code = 401
-            mock_401_response.json.return_value = {"errorMessage": "Token expired"}
-            mock_401_response.text = "Unauthorized"
-
-            # Second request (after token refresh) returns success
-            mock_success_response = Mock()
-            mock_success_response.status_code = 200
-            mock_success_response.json.return_value = [
-                {
-                    "securityId": "12345",
-                    "tradingSymbol": "TATSILV",
-                    "exchange": "NSE",
-                    "isin": "INF277KA1984",
-                    "totalQty": 160,
-                    "availableQty": 160,
-                    "avgCostPrice": 24.80,
-                    "collateralQty": 0,
-                }
-            ]
-
-            # Token refresh response
+            # Token refresh response (simulating successful refresh)
             mock_refresh_response = Mock()
             mock_refresh_response.status_code = 200
-            mock_refresh_response.json.return_value = {"access_token": "new_token_123"}
+            mock_refresh_response.json.return_value = {"access_token": "new_token_456"}
             mock_post.return_value = mock_refresh_response
-
-            # Mock client with proper headers dict
-            mock_client_instance = MagicMock()
-            mock_client_instance.headers = {
-                "Content-Type": "application/json",
-                "Accept": "application/json",
-                "access-token": "old_token",
-                "client-id": "test_client",
-            }
-            mock_client_instance.request.side_effect = [mock_401_response, mock_success_response]
-            MockHttpClient.return_value = mock_client_instance
 
             from dhan_tracker.client import DhanClient
 
             client = DhanClient(mock_config)
-            client._client = mock_client_instance
 
-            # This should trigger token refresh and retry
-            holdings = client.get_holdings()
+            # Manually call refresh (simulating scheduled job)
+            result = client.refresh_token()
 
             # Verify token was refreshed
             assert mock_post.called
-            assert client.config.access_token == "new_token_123"
-            assert client._client.headers["access-token"] == "new_token_123"
+            assert client.config.access_token == "new_token_456"
+            assert client._client.headers["access-token"] == "new_token_456"
             
-            # Verify the request was retried and succeeded
-            assert len(holdings) == 1
-            assert holdings[0].trading_symbol == "TATSILV"
+            # Verify result
+            assert result["access_token"] == "new_token_456"
 
 
 # Integration test (requires real credentials)
