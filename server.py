@@ -337,20 +337,19 @@ async def health():
     # Quick config file existence check (without loading full config)
     # This is fast and doesn't involve network calls
     try:
-        # Check if .env file exists in expected locations
-        from pathlib import Path
-        env_file = Path(__file__).parent / ".env"
-        home_config = Path.home() / ".dhan-tracker" / "config.env"
+        from dhan_tracker.config import get_config_file
         
-        if env_file.exists() or home_config.exists():
+        if get_config_file() is not None:
             health_status["config_loaded"] = True
         else:
             health_status["config_loaded"] = False
             health_status["config_warning"] = "Config file not found"
     except Exception as e:
         # Config check failures are warnings, not critical errors
+        # Log the detailed error but return a generic message
+        logger.warning(f"Health check config validation failed: {e}")
         health_status["config_loaded"] = False
-        health_status["config_warning"] = f"Config check failed: {str(e)}"
+        health_status["config_warning"] = "Config check failed"
     
     return health_status
 
