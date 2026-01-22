@@ -314,9 +314,36 @@ async def serve_ui():
 
 # Health check (no password required)
 @app.get("/health")
-async def health(auth: bool = Depends(verify_password)):
-    """Health check - also used for password verification."""
-    return {"status": "ok"}
+async def health():
+    """
+    Health check endpoint for load balancers and monitoring.
+    No password required - checks if server and API services are working.
+    """
+    health_status = {
+        "status": "ok",
+        "timestamp": datetime.now(IST).isoformat(),
+        "scheduler_running": scheduler.running,
+    }
+    
+    # Check if next protection run is scheduled
+    jobs = scheduler.get_jobs()
+    if jobs:
+        next_run_times = [job.next_run_time for job in jobs if job.next_run_time]
+        if next_run_times:
+            health_status["next_protection_run"] = min(next_run_times).isoformat()
+    
+    # Try to check if Dhan API is accessible (optional - don't fail if it's not)
+    try:
+        config = DhanConfig.load()
+        # Just check if config loads successfully - we don't want to make API calls
+        # as that could be slow or rate-limited
+        health_status["config_loaded"] = True
+    except Exception as e:
+        # Config issues are warnings, not failures - health check still passes
+        health_status["config_loaded"] = False
+        health_status["config_warning"] = str(e)
+    
+    return health_status
 
 
 # API Endpoints (password protected)

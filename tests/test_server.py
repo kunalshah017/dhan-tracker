@@ -152,17 +152,21 @@ class TestHealthEndpoints:
         assert response.status_code == 200
         assert "text/html" in response.headers.get("content-type", "")
 
-    def test_simple_health_check(self, client, auth_headers):
-        """Test /health endpoint for load balancers (requires password)."""
+    def test_simple_health_check(self, client):
+        """Test /health endpoint for load balancers (no password required)."""
+        response = client.get("/health")
+        assert response.status_code == 200
+        data = response.json()
+        assert data["status"] == "ok"
+        assert "timestamp" in data
+        assert "scheduler_running" in data
+
+    def test_health_check_with_password(self, client, auth_headers):
+        """Test /health endpoint also works with password (for backward compatibility)."""
         response = client.get("/health", headers=auth_headers)
         assert response.status_code == 200
         data = response.json()
         assert data["status"] == "ok"
-
-    def test_health_check_without_password(self, client):
-        """Test /health endpoint rejects requests without password."""
-        response = client.get("/health")
-        assert response.status_code == 401
 
 
 class TestHoldingsEndpoint:
