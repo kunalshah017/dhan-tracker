@@ -1,6 +1,7 @@
 """Dhan API Client for interacting with Dhan Trading APIs."""
 
 import logging
+import os
 from typing import Optional
 
 import httpx
@@ -61,7 +62,13 @@ class DhanClient:
         json: dict | None = None,
         params: dict | None = None,
     ) -> dict | list:
-        """Make an API request."""
+        """Make an API request.
+        
+        Note: Token refresh on 401 is NOT implemented here because the Dhan API's
+        /v2/RenewToken endpoint requires a VALID token. If we receive 401, the token
+        has already expired and cannot be refreshed. Instead, tokens are proactively
+        refreshed every 23 hours via scheduled job before they expire.
+        """
         try:
             response = self._client.request(
                 method=method,
@@ -82,6 +89,11 @@ class DhanClient:
                     error_msg = error_data.get(
                         "errorMessage", error_data.get("message", error_msg))
                     logger.error(f"API Error Response: {error_data}")
+                    
+                    # Special handling for token expiration
+                    if response.status_code == 401:
+                        logger.error("Token has expired! Please update DHAN_ACCESS_TOKEN in environment variables.")
+                        logger.error("Tokens cannot be refreshed after expiry - they must be renewed BEFORE expiration.")
                 except Exception:
                     error_msg = response.text or error_msg
                     logger.error(f"API Error Text: {response.text}")
@@ -498,12 +510,20 @@ class DhanClient:
 
     # ==================== Token Management ====================
 
-    def refresh_token(self) -> dict:
+    def _refresh_token_internal(self) -> dict:
         """
-        Refresh the access token for another 24 hours.
-
+        Internal method to refresh the access token.
+        Updates the client headers with the new token.
+        
+        IMPORTANT: This only works if the current token is still VALID.
+        If the token has already expired (401), this will fail.
+        Use scheduled proactive refresh (every 23 hours) instead.
+        
         Returns:
-            New token response
+            New token response dict
+            
+        Raises:
+            DhanAPIError: If token refresh fails
         """
         # Use raw httpx for this since it's a different endpoint pattern
         response = httpx.post(
@@ -515,7 +535,44 @@ class DhanClient:
         )
 
         if response.status_code >= 400:
-            raise DhanAPIError(
-                f"Token refresh failed: {response.text}", response.status_code)
+            error_msg = f"Token refresh failed with status {response.status_code}: {response.text}"
+            logger.error(error_msg)
+            logger.error("This likely means the token has already expired.")
+            logger.error("Tokens must be refreshed BEFORE they expire (within 24 hours of generation).")
+            raise DhanAPIError(error_msg, response.status_code)
 
-        return response.json()
+        token_data = response.json()
+        
+        # Extract the new access token from the response
+        # The Dhan API may return the token in different formats
+        new_token = None
+        if isinstance(token_data, dict):
+            # Try common key names for the access token
+            new_token = token_data.get("access_token") or token_data.get("accessToken")
+        
+        if not new_token:
+            logger.error(f"Unexpected token response format: {token_data}")
+            raise DhanAPIError(
+                f"Failed to extract new token from refresh response. Response: {token_data}")
+            
+        # Update the config and client headers with the new token
+        self.config.access_token = new_token
+        self._client.headers["access-token"] = new_token
+        
+        # Also update the environment variable so it persists across requests
+        # This is important for Azure App Service where the config is loaded from env vars
+        os.environ["DHAN_ACCESS_TOKEN"] = new_token
+        
+        logger.info("Access token refreshed and updated successfully")
+        logger.info(f"New token will be valid for next 24 hours")
+            
+        return token_data
+
+    def refresh_token(self) -> dict:
+        """
+        Refresh the access token for another 24 hours.
+
+        Returns:
+            New token response
+        """
+        return self._refresh_token_internal()

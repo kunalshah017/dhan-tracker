@@ -49,6 +49,8 @@ last_protection_run: Optional[datetime] = None
 last_protection_result: Optional[dict] = None
 last_amo_run: Optional[datetime] = None
 last_amo_result: Optional[dict] = None
+last_token_refresh: Optional[datetime] = None
+last_token_refresh_result: Optional[dict] = None
 
 # Load APP_PASSWORD from config
 
@@ -138,6 +140,48 @@ def run_daily_protection():
         }
 
 
+def refresh_dhan_token():
+    """
+    Proactively refresh the Dhan access token before it expires.
+    
+    Dhan tokens are valid for 24 hours. This job runs every 23 hours
+    to refresh the token BEFORE it expires. This is necessary because
+    the /v2/RenewToken endpoint requires a VALID token to work.
+    """
+    global last_token_refresh, last_token_refresh_result
+
+    logger.info("=" * 60)
+    logger.info("SCHEDULED TOKEN REFRESH STARTED")
+    logger.info("=" * 60)
+
+    try:
+        config = DhanConfig.load()
+        client = DhanClient(config)
+        
+        # Refresh the token
+        result = client.refresh_token()
+        
+        last_token_refresh = datetime.now(IST)
+        last_token_refresh_result = {
+            "status": "success",
+            "timestamp": last_token_refresh.isoformat(),
+            "message": "Token refreshed successfully",
+            "new_token_length": len(client.config.access_token),
+        }
+        
+        logger.info("Token refresh completed successfully")
+        logger.info(f"New token expires in 24 hours from {last_token_refresh}")
+
+    except Exception as e:
+        logger.error(f"Token refresh failed: {e}")
+        last_token_refresh = datetime.now(IST)
+        last_token_refresh_result = {
+            "status": "error",
+            "timestamp": last_token_refresh.isoformat(),
+            "error": str(e),
+        }
+
+
 def run_amo_protection():
     """
     Run AMO (After Market Order) protection.
@@ -202,6 +246,18 @@ def run_amo_protection():
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage scheduler lifecycle."""
+    # Schedule token refresh every 23 hours (before 24-hour expiry)
+    # This is CRITICAL: refresh must happen BEFORE token expires
+    # because /v2/RenewToken requires a VALID token to work
+    scheduler.add_job(
+        refresh_dhan_token,
+        'interval',
+        hours=23,
+        id="token_refresh",
+        name="Proactive Token Refresh (every 23 hours)",
+        replace_existing=True,
+    )
+    
     # Schedule AMO protection at 8:30 AM IST (before market opens)
     # This places SL orders that will be active from market open (9:15 AM)
     scheduler.add_job(
@@ -224,6 +280,7 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
     logger.info("Scheduler started:")
+    logger.info("  - Token Refresh: Every 23 hours (proactive, before expiry)")
     logger.info("  - AMO Protection: 8:30 AM IST (pre-market SL orders)")
     logger.info("  - Daily Protection: 9:20 AM IST (Super Orders with target)")
 

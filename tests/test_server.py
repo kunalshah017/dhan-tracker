@@ -563,7 +563,7 @@ class TestDhanClient:
             assert holdings[0].total_qty == 160
 
     def test_api_error_handling(self, mock_config):
-        """Test API error handling."""
+        """Test API error handling for 401 errors."""
         with patch("httpx.Client") as MockHttpClient:
             mock_response = Mock()
             mock_response.status_code = 401
@@ -579,10 +579,37 @@ class TestDhanClient:
             client = DhanClient(mock_config)
             client._client = mock_client_instance
 
+            # 401 errors should be raised immediately (no auto-refresh on 401)
+            # because token refresh requires a VALID token
             with pytest.raises(DhanAPIError) as exc_info:
                 client.get_holdings()
 
             assert exc_info.value.status_code == 401
+
+    def test_proactive_token_refresh(self, mock_config):
+        """Test proactive token refresh (when token is still valid)."""
+        with patch("httpx.post") as mock_post:
+            
+            # Token refresh response (simulating successful refresh)
+            mock_refresh_response = Mock()
+            mock_refresh_response.status_code = 200
+            mock_refresh_response.json.return_value = {"access_token": "new_token_456"}
+            mock_post.return_value = mock_refresh_response
+
+            from dhan_tracker.client import DhanClient
+
+            client = DhanClient(mock_config)
+
+            # Manually call refresh (simulating scheduled job)
+            result = client.refresh_token()
+
+            # Verify token was refreshed
+            assert mock_post.called
+            assert client.config.access_token == "new_token_456"
+            assert client._client.headers["access-token"] == "new_token_456"
+            
+            # Verify result
+            assert result["access_token"] == "new_token_456"
 
 
 # Integration test (requires real credentials)

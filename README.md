@@ -178,7 +178,10 @@ dhan-tracker/
 ⚠️ **Token Validity**:
 
 - Access tokens are valid for **24 hours only**
-- Refresh daily or use the API to renew
+- The server automatically refreshes tokens **every 23 hours** (before expiry)
+- Token refresh requires a **VALID** token - it cannot revive an expired token
+- If the server is down for >24 hours, you must manually update the token
+- Get a new token from [web.dhan.co](https://web.dhan.co) → My Profile → Access DhanHQ APIs
 
 ⚠️ **Market Hours**:
 
