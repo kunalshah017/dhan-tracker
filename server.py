@@ -259,6 +259,8 @@ class HealthResponse(BaseModel):
     timestamp: str
     scheduler_running: bool
     next_protection_run: Optional[str] = None
+    config_loaded: Optional[bool] = None
+    config_warning: Optional[str] = None
 
 
 class HoldingResponse(BaseModel):
@@ -313,7 +315,7 @@ async def serve_ui():
 
 
 # Health check (no password required)
-@app.get("/health")
+@app.get("/health", response_model=HealthResponse)
 async def health():
     """
     Health check endpoint for load balancers and monitoring.
@@ -332,16 +334,23 @@ async def health():
         if next_run_times:
             health_status["next_protection_run"] = min(next_run_times).isoformat()
     
-    # Try to check if Dhan API is accessible (optional - don't fail if it's not)
+    # Quick config file existence check (without loading full config)
+    # This is fast and doesn't involve network calls
     try:
-        config = DhanConfig.load()
-        # Just check if config loads successfully - we don't want to make API calls
-        # as that could be slow or rate-limited
-        health_status["config_loaded"] = True
+        # Check if .env file exists in expected locations
+        from pathlib import Path
+        env_file = Path(__file__).parent / ".env"
+        home_config = Path.home() / ".dhan-tracker" / "config.env"
+        
+        if env_file.exists() or home_config.exists():
+            health_status["config_loaded"] = True
+        else:
+            health_status["config_loaded"] = False
+            health_status["config_warning"] = "Config file not found"
     except Exception as e:
-        # Config issues are warnings, not failures - health check still passes
+        # Config check failures are warnings, not critical errors
         health_status["config_loaded"] = False
-        health_status["config_warning"] = str(e)
+        health_status["config_warning"] = f"Config check failed: {str(e)}"
     
     return health_status
 
