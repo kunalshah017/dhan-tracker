@@ -33,7 +33,6 @@ class DhanClient:
     def __init__(self, config: DhanConfig):
         """Initialize Dhan client with configuration."""
         self.config = config
-        self._token_refreshed = False  # Track if we've already tried refreshing the token
         self._client = httpx.Client(
             base_url=config.base_url,
             headers={
@@ -61,9 +60,17 @@ class DhanClient:
         endpoint: str,
         json: dict | None = None,
         params: dict | None = None,
-        retry_on_401: bool = True,
+        _retry_count: int = 0,
     ) -> dict | list:
-        """Make an API request with automatic token refresh on 401."""
+        """Make an API request with automatic token refresh on 401.
+        
+        Args:
+            method: HTTP method (GET, POST, PUT, DELETE)
+            endpoint: API endpoint path
+            json: JSON payload for request body
+            params: Query parameters
+            _retry_count: Internal counter to prevent infinite retry loops (max 1 retry)
+        """
         try:
             response = self._client.request(
                 method=method,
@@ -77,15 +84,16 @@ class DhanClient:
                 return {"status": "accepted"}
 
             # Check for 401 Unauthorized - token might be expired
-            if response.status_code == 401 and retry_on_401 and not self._token_refreshed:
+            # Only retry once to prevent infinite loops
+            if response.status_code == 401 and _retry_count == 0:
                 logger.warning("Received 401 Unauthorized. Attempting to refresh token...")
                 try:
                     # Try to refresh the token
-                    new_token_data = self._refresh_token_internal()
+                    self._refresh_token_internal()
                     logger.info("Token refreshed successfully. Retrying request...")
                     
-                    # Retry the request with the new token (but don't retry again on 401)
-                    return self._request(method, endpoint, json, params, retry_on_401=False)
+                    # Retry the request with the new token (increment retry count)
+                    return self._request(method, endpoint, json, params, _retry_count=1)
                 except Exception as refresh_error:
                     logger.error(f"Token refresh failed: {refresh_error}")
                     # Fall through to raise the original 401 error
@@ -520,7 +528,10 @@ class DhanClient:
         Updates the client headers with the new token.
         
         Returns:
-            New token response
+            New token response dict
+            
+        Raises:
+            DhanAPIError: If token refresh fails
         """
         # Use raw httpx for this since it's a different endpoint pattern
         response = httpx.post(
@@ -538,25 +549,21 @@ class DhanClient:
         token_data = response.json()
         
         # Extract the new access token from the response
-        # The Dhan API returns the new token in the response
-        if "access_token" in token_data:
-            new_token = token_data["access_token"]
-        elif "accessToken" in token_data:
-            new_token = token_data["accessToken"]
-        else:
-            # If the response structure is different, log and try to extract
-            logger.warning(f"Unexpected token response format: {token_data}")
-            # Try to use the response directly if it's a string
-            new_token = token_data if isinstance(token_data, str) else None
+        # The Dhan API may return the token in different formats
+        new_token = None
+        if isinstance(token_data, dict):
+            # Try common key names for the access token
+            new_token = token_data.get("access_token") or token_data.get("accessToken")
+        
+        if not new_token:
+            logger.error(f"Unexpected token response format: {token_data}")
+            raise DhanAPIError(
+                f"Failed to extract new token from refresh response. Response: {token_data}")
             
-        if new_token:
-            # Update the config and client headers with the new token
-            self.config.access_token = new_token
-            self._client.headers["access-token"] = new_token
-            self._token_refreshed = True
-            logger.info("Access token updated in client")
-        else:
-            raise DhanAPIError("Failed to extract new token from refresh response")
+        # Update the config and client headers with the new token
+        self.config.access_token = new_token
+        self._client.headers["access-token"] = new_token
+        logger.info("Access token updated successfully")
             
         return token_data
 
