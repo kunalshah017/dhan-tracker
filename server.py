@@ -337,12 +337,13 @@ async def health():
     # Quick config file existence check (without loading full config)
     # This is fast and doesn't involve network calls
     try:
-        if get_config_file() is not None:
+        config_file = get_config_file()
+        if config_file is not None:
             health_status["config_loaded"] = True
         else:
             health_status["config_loaded"] = False
             health_status["config_warning"] = "Config file not found"
-    except Exception as e:
+    except (OSError, PermissionError) as e:
         # Config check failures are warnings, not critical errors
         # Log the detailed error but return a generic message
         logger.warning(f"Health check config validation failed: {e}")
