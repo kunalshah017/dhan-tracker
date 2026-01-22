@@ -154,7 +154,17 @@ The scheduler uses IST (Asia/Kolkata) for market hours.
 
 ## Scheduler
 
-The protection job runs daily at **9:20 AM IST** (5 minutes after market opens).
+The server runs three scheduled jobs:
+
+1. **Token Refresh**: Every 23 hours (proactive, before token expires)
+   - Refreshes the Dhan access token before it expires
+   - Critical for keeping the server running without manual intervention
+   
+2. **AMO Protection**: Daily at 8:30 AM IST (before market opens at 9:15 AM)
+   - Places After Market Orders (SL orders active from market open)
+   
+3. **Daily Protection**: Daily at 9:20 AM IST (after market opens)
+   - Places Super Orders with stop-loss and target prices
 
 You can:
 
@@ -180,8 +190,11 @@ You can:
 
 ### 401 errors from Dhan API
 
-- Verify access token is valid
-- Check if token has expired
+- **Token expired**: If you see 401 errors, the access token has likely expired
+- **Automatic refresh**: The server refreshes tokens every 23 hours automatically
+- **Server downtime**: If the server was down for >24 hours, the token expired and cannot be auto-refreshed
+- **Solution**: Generate a new token from [web.dhan.co](https://web.dhan.co) and update `DHAN_ACCESS_TOKEN` in Azure environment variables
+- **Important**: Token refresh ONLY works if called BEFORE the token expires - it cannot revive an expired token
 
 ### NSE API errors
 
