@@ -25,7 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 from dhan_tracker.client import DhanClient, DhanAPIError
-from dhan_tracker.config import DhanConfig
+from dhan_tracker.config import DhanConfig, get_config_file
 from dhan_tracker.protection import PortfolioProtector, ProtectionConfig
 from dhan_tracker.nse_client import NSEClient, NSEError, ETFData
 
@@ -259,6 +259,8 @@ class HealthResponse(BaseModel):
     timestamp: str
     scheduler_running: bool
     next_protection_run: Optional[str] = None
+    config_loaded: Optional[bool] = None
+    config_warning: Optional[str] = None
 
 
 class HoldingResponse(BaseModel):
@@ -313,10 +315,42 @@ async def serve_ui():
 
 
 # Health check (no password required)
-@app.get("/health")
-async def health(auth: bool = Depends(verify_password)):
-    """Health check - also used for password verification."""
-    return {"status": "ok"}
+@app.get("/health", response_model=HealthResponse)
+async def health():
+    """
+    Health check endpoint for load balancers and monitoring.
+    No password required - checks if server and API services are working.
+    """
+    health_status = {
+        "status": "ok",
+        "timestamp": datetime.now(IST).isoformat(),
+        "scheduler_running": scheduler.running,
+    }
+    
+    # Check if next protection run is scheduled
+    jobs = scheduler.get_jobs()
+    if jobs:
+        next_run_times = [job.next_run_time for job in jobs if job.next_run_time]
+        if next_run_times:
+            health_status["next_protection_run"] = min(next_run_times).isoformat()
+    
+    # Quick config file existence check (without loading full config)
+    # This is fast and doesn't involve network calls
+    try:
+        config_file = get_config_file()
+        if config_file is not None:
+            health_status["config_loaded"] = True
+        else:
+            health_status["config_loaded"] = False
+            health_status["config_warning"] = "Config file not found"
+    except (OSError, PermissionError) as e:
+        # Config check failures are warnings, not critical errors
+        # Log the detailed error but return a generic message
+        logger.warning(f"Health check config validation failed: {e}")
+        health_status["config_loaded"] = False
+        health_status["config_warning"] = "Config check failed"
+    
+    return health_status
 
 
 # API Endpoints (password protected)
