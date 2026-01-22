@@ -25,7 +25,7 @@ from apscheduler.triggers.cron import CronTrigger
 import pytz
 
 from dhan_tracker.client import DhanClient, DhanAPIError
-from dhan_tracker.config import DhanConfig
+from dhan_tracker.config import DhanConfig, get_config_file
 from dhan_tracker.protection import PortfolioProtector, ProtectionConfig
 from dhan_tracker.nse_client import NSEClient, NSEError, ETFData
 
@@ -337,8 +337,6 @@ async def health():
     # Quick config file existence check (without loading full config)
     # This is fast and doesn't involve network calls
     try:
-        from dhan_tracker.config import get_config_file
-        
         if get_config_file() is not None:
             health_status["config_loaded"] = True
         else:
