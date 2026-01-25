@@ -1,5 +1,6 @@
 """Configuration management for Dhan Tracker."""
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -12,6 +13,8 @@ PROJECT_ROOT = Path(__file__).parent.parent.parent
 PROJECT_ENV_FILE = PROJECT_ROOT / ".env"
 HOME_CONFIG_DIR = Path.home() / ".dhan-tracker"
 HOME_CONFIG_FILE = HOME_CONFIG_DIR / "config.env"
+
+logger = logging.getLogger(__name__)
 
 
 def get_config_file() -> Path | None:
@@ -27,6 +30,24 @@ def get_config_file() -> Path | None:
 def _has_required_env_vars() -> bool:
     """Check if required environment variables are already set."""
     return bool(os.getenv("DHAN_ACCESS_TOKEN") and os.getenv("DHAN_CLIENT_ID"))
+
+
+def _try_load_token_from_db() -> str | None:
+    """Try to load the Dhan access token from the database."""
+    try:
+        from dhan_tracker.database import get_dhan_token, is_database_available
+
+        if not is_database_available():
+            return None
+
+        token = get_dhan_token()
+        if token:
+            logger.info("Loaded access token from database")
+            return token
+    except Exception as e:
+        logger.debug(f"Could not load token from database: {e}")
+
+    return None
 
 
 @dataclass
@@ -62,17 +83,31 @@ class DhanConfig:
 
     @classmethod
     def load(cls) -> "DhanConfig":
-        """Load configuration from environment variables or .env file.
+        """Load configuration from database, environment variables, or .env file.
 
-        This is the preferred method for loading config. It:
-        1. First checks if required env vars are already set (Azure App Service)
-        2. Falls back to loading from .env file (local development)
+        This is the preferred method for loading config. Priority:
+        1. Database (for refreshed tokens that persist across restarts)
+        2. Environment variables (Azure App Service settings)
+        3. .env file (local development)
         """
-        # If env vars are already set (e.g., Azure App Service), use them directly
+        client_id = os.getenv("DHAN_CLIENT_ID")
+
+        # Try loading token from database first (persisted refreshed tokens)
+        db_token = _try_load_token_from_db()
+        if db_token and client_id:
+            stop_loss_percent = float(
+                os.getenv("DHAN_STOP_LOSS_PERCENT", "5.0"))
+            return cls(
+                access_token=db_token,
+                client_id=client_id,
+                default_stop_loss_percent=stop_loss_percent,
+            )
+
+        # Fall back to env vars
         if _has_required_env_vars():
             return cls.from_env()
 
-        # Otherwise, try to load from .env file
+        # Finally, try to load from .env file
         return cls.from_file()
 
     @classmethod

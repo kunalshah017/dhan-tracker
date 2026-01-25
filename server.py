@@ -1,3 +1,5 @@
+# isort: skip_file
+# fmt: off (imports must stay in this order - sys.path.insert before dhan_tracker)
 """
 Dhan Tracker FastAPI Server
 
@@ -28,6 +30,8 @@ from dhan_tracker.client import DhanClient, DhanAPIError
 from dhan_tracker.config import DhanConfig, get_config_file
 from dhan_tracker.protection import PortfolioProtector, ProtectionConfig
 from dhan_tracker.nse_client import NSEClient, NSEError, ETFData
+from dhan_tracker.database import init_database, get_dhan_token_info, is_database_available
+# fmt: on
 
 
 # Configure logging
@@ -143,7 +147,7 @@ def run_daily_protection():
 def refresh_dhan_token():
     """
     Proactively refresh the Dhan access token before it expires.
-    
+
     Dhan tokens are valid for 24 hours. This job runs every 23 hours
     to refresh the token BEFORE it expires. This is necessary because
     the /v2/RenewToken endpoint requires a VALID token to work.
@@ -157,10 +161,10 @@ def refresh_dhan_token():
     try:
         config = DhanConfig.load()
         client = DhanClient(config)
-        
+
         # Refresh the token
         result = client.refresh_token()
-        
+
         last_token_refresh = datetime.now(IST)
         last_token_refresh_result = {
             "status": "success",
@@ -168,7 +172,7 @@ def refresh_dhan_token():
             "message": "Token refreshed successfully",
             "new_token_length": len(client.config.access_token),
         }
-        
+
         logger.info("Token refresh completed successfully")
         logger.info(f"New token expires in 24 hours from {last_token_refresh}")
 
@@ -245,19 +249,31 @@ def run_amo_protection():
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Manage scheduler lifecycle."""
-    # Schedule token refresh every 23 hours (before 24-hour expiry)
+    """Manage scheduler lifecycle and database initialization."""
+
+    # Initialize database (creates tables if needed)
+    if is_database_available():
+        if init_database():
+            logger.info("Database initialized - token persistence enabled")
+        else:
+            logger.warning(
+                "Database initialization failed - using env vars only")
+    else:
+        logger.info(
+            "Database not configured - using environment variables for token")
+
+    # Schedule token refresh every 12 hours (well before 24-hour expiry)
     # This is CRITICAL: refresh must happen BEFORE token expires
     # because /v2/RenewToken requires a VALID token to work
     scheduler.add_job(
         refresh_dhan_token,
         'interval',
-        hours=23,
+        hours=12,
         id="token_refresh",
-        name="Proactive Token Refresh (every 23 hours)",
+        name="Proactive Token Refresh (every 12 hours)",
         replace_existing=True,
     )
-    
+
     # Schedule AMO protection at 8:30 AM IST (before market opens)
     # This places SL orders that will be active from market open (9:15 AM)
     scheduler.add_job(
@@ -280,7 +296,7 @@ async def lifespan(app: FastAPI):
 
     scheduler.start()
     logger.info("Scheduler started:")
-    logger.info("  - Token Refresh: Every 23 hours (proactive, before expiry)")
+    logger.info("  - Token Refresh: Every 12 hours (proactive, before expiry)")
     logger.info("  - AMO Protection: 8:30 AM IST (pre-market SL orders)")
     logger.info("  - Daily Protection: 9:20 AM IST (Super Orders with target)")
 
@@ -383,14 +399,16 @@ async def health():
         "timestamp": datetime.now(IST).isoformat(),
         "scheduler_running": scheduler.running,
     }
-    
+
     # Check if next protection run is scheduled
     jobs = scheduler.get_jobs()
     if jobs:
-        next_run_times = [job.next_run_time for job in jobs if job.next_run_time]
+        next_run_times = [
+            job.next_run_time for job in jobs if job.next_run_time]
         if next_run_times:
-            health_status["next_protection_run"] = min(next_run_times).isoformat()
-    
+            health_status["next_protection_run"] = min(
+                next_run_times).isoformat()
+
     # Quick config file existence check (without loading full config)
     # This is fast and doesn't involve network calls
     try:
@@ -406,7 +424,7 @@ async def health():
         logger.warning(f"Health check config validation failed: {e}")
         health_status["config_loaded"] = False
         health_status["config_warning"] = "Config check failed"
-    
+
     return health_status
 
 
@@ -738,6 +756,50 @@ async def scheduler_status():
         "running": scheduler.running,
         "jobs": jobs,
         "timezone": str(IST),
+    }
+
+
+@app.get("/api/token/status", dependencies=[Depends(verify_password)])
+async def get_token_status():
+    """
+    Get the current access token status.
+
+    Shows whether token is loaded from database or environment,
+    when it was last refreshed, and when it expires.
+    """
+    token_info = get_dhan_token_info()
+    db_available = is_database_available()
+
+    response = {
+        "database_enabled": db_available,
+        "token_source": "database" if token_info else "environment",
+        "last_refresh": last_token_refresh.isoformat() if last_token_refresh else None,
+        "last_refresh_result": last_token_refresh_result,
+    }
+
+    if token_info:
+        response["token_info"] = {
+            "stored_at": token_info.get("updated_at").isoformat() if token_info.get("updated_at") else None,
+            "expires_at": token_info.get("expires_at").isoformat() if token_info.get("expires_at") else None,
+            "client_id": token_info.get("client_id"),
+            "token_length": len(token_info.get("key_value", "")),
+        }
+
+    return response
+
+
+@app.post("/api/token/refresh", dependencies=[Depends(verify_password)])
+async def manual_token_refresh():
+    """
+    Manually trigger a token refresh.
+
+    Use this to immediately refresh the token if needed.
+    The new token will be saved to the database for persistence.
+    """
+    refresh_dhan_token()
+    return {
+        "status": "completed",
+        "result": last_token_refresh_result,
     }
 
 
