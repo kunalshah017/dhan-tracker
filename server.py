@@ -381,14 +381,19 @@ class ProtectionRunResponse(BaseModel):
 STATIC_DIR = Path(__file__).parent / "static"
 
 
-# Root route - serve UI
+# Mount static assets (JS, CSS, etc.) - must be before catch-all route
+if STATIC_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+
+# Serve React SPA index.html for root
 @app.get("/", response_class=HTMLResponse)
 async def serve_ui():
-    """Serve the main UI."""
+    """Serve the React SPA."""
     index_file = STATIC_DIR / "index.html"
     if index_file.exists():
         return FileResponse(index_file, media_type="text/html")
-    return HTMLResponse("<h1>Dhan Tracker</h1><p>UI not found. Check static/index.html</p>")
+    return HTMLResponse("<h1>Dhan Tracker</h1><p>UI not found. Run 'npm run build' in frontend/</p>")
 
 
 # Health check (no password required)
@@ -992,14 +997,25 @@ async def buy_etf(order: BuyOrderRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-# Serve ETF page
-@app.get("/etf", response_class=HTMLResponse)
-async def serve_etf_page():
-    """Serve the ETF recommendations page."""
-    etf_file = STATIC_DIR / "etf.html"
-    if etf_file.exists():
-        return FileResponse(etf_file, media_type="text/html")
-    return HTMLResponse("<h1>ETF Page Not Found</h1><p>Check static/etf.html</p>")
+# Serve vite.svg and other root static files
+@app.get("/{filename:path}")
+async def serve_static_or_spa(filename: str):
+    """
+    Catch-all route for React SPA.
+    - Serve static files if they exist
+    - Otherwise serve index.html for client-side routing
+    """
+    # Try to serve static file first
+    static_file = STATIC_DIR / filename
+    if static_file.exists() and static_file.is_file():
+        return FileResponse(static_file)
+
+    # For all other routes, serve React SPA (client-side routing)
+    index_file = STATIC_DIR / "index.html"
+    if index_file.exists():
+        return FileResponse(index_file, media_type="text/html")
+
+    raise HTTPException(status_code=404, detail="Not found")
 
 
 if __name__ == "__main__":

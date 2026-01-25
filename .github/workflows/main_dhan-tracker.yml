@@ -19,6 +19,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Build React frontend first
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci
+
+      - name: Build React app
+        working-directory: frontend
+        run: npm run build
+
+      - name: Move build to static folder
+        run: |
+          rm -rf static
+          mv frontend/dist static
+
       - name: Set up Python version
         uses: actions/setup-python@v5
         with:
@@ -40,6 +61,8 @@ jobs:
           path: |
             .
             !antenv/
+            !frontend/node_modules/
+            !frontend/
 
       # 🚫 Opting Out of Oryx Build
       # If you prefer to disable the Oryx build process during deployment, follow these steps:

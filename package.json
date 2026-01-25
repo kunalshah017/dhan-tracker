@@ -1,0 +1,15 @@
+{
+  "name": "dhan-tracker",
+  "version": "1.0.0",
+  "description": "Dhan Portfolio Tracker with React frontend and FastAPI backend",
+  "scripts": {
+    "dev": "concurrently -n \"Backend,Frontend\" -c \"blue,green\" \"uvicorn server:app --reload --host 0.0.0.0 --port 8000\" \"cd frontend && npm run dev\"",
+    "dev:backend": "uvicorn server:app --reload --host 0.0.0.0 --port 8000",
+    "dev:frontend": "cd frontend && npm run dev",
+    "build": "cd frontend && npm run build && cd .. && rm -rf static && mv frontend/dist static",
+    "build:win": "cd frontend && npm run build && cd .. && if exist static rmdir /s /q static && move frontend\\dist static"
+  },
+  "devDependencies": {
+    "concurrently": "^9.0.1"
+  }
+}
