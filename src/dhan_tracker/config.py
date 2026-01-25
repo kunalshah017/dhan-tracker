@@ -29,7 +29,7 @@ def get_config_file() -> Path | None:
 
 def _try_load_from_db() -> tuple[str | None, str | None]:
     """Try to load the Dhan access token and client_id from the database.
-    
+
     Returns:
         Tuple of (access_token, client_id) or (None, None) if not found
     """
@@ -91,7 +91,7 @@ class DhanConfig:
         This is the preferred method for loading config. Priority:
         1. Database (for refreshed tokens that persist across restarts)
         2. .env file (local development only)
-        
+
         Note: DHAN_ACCESS_TOKEN env var is no longer used to avoid conflicts.
         The token is stored in and loaded from the database.
         """

@@ -15,6 +15,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+# Load .env file for local development (must be before other imports that use env vars)
+from dotenv import load_dotenv
+load_dotenv()
+
 # Add src to path - MUST be before dhan_tracker imports
 sys.path.insert(0, str(Path(__file__).parent / "src"))
 
