@@ -27,27 +27,29 @@ def get_config_file() -> Path | None:
     return None
 
 
-def _has_required_env_vars() -> bool:
-    """Check if required environment variables are already set."""
-    return bool(os.getenv("DHAN_ACCESS_TOKEN") and os.getenv("DHAN_CLIENT_ID"))
-
-
-def _try_load_token_from_db() -> str | None:
-    """Try to load the Dhan access token from the database."""
+def _try_load_from_db() -> tuple[str | None, str | None]:
+    """Try to load the Dhan access token and client_id from the database.
+    
+    Returns:
+        Tuple of (access_token, client_id) or (None, None) if not found
+    """
     try:
-        from dhan_tracker.database import get_dhan_token, is_database_available
+        from dhan_tracker.database import get_dhan_token_info, is_database_available
 
         if not is_database_available():
-            return None
+            return None, None
 
-        token = get_dhan_token()
-        if token:
-            logger.info("Loaded access token from database")
-            return token
+        token_info = get_dhan_token_info()
+        if token_info:
+            token = token_info.get("key_value")
+            client_id = token_info.get("client_id")
+            if token and client_id:
+                logger.info("Loaded access token and client_id from database")
+                return token, client_id
     except Exception as e:
-        logger.debug(f"Could not load token from database: {e}")
+        logger.debug(f"Could not load from database: {e}")
 
-    return None
+    return None, None
 
 
 @dataclass
@@ -63,13 +65,14 @@ class DhanConfig:
 
     @classmethod
     def from_env(cls) -> "DhanConfig":
-        """Load configuration from environment variables."""
+        """Load configuration from environment variables (legacy/fallback)."""
+        # Note: DHAN_ACCESS_TOKEN from env is deprecated, use database instead
         access_token = os.getenv("DHAN_ACCESS_TOKEN")
         client_id = os.getenv("DHAN_CLIENT_ID")
 
         if not access_token:
             raise ValueError(
-                "DHAN_ACCESS_TOKEN environment variable is required")
+                "No access token found. Please add token to database or set DHAN_ACCESS_TOKEN")
         if not client_id:
             raise ValueError("DHAN_CLIENT_ID environment variable is required")
 
@@ -83,31 +86,27 @@ class DhanConfig:
 
     @classmethod
     def load(cls) -> "DhanConfig":
-        """Load configuration from database, environment variables, or .env file.
+        """Load configuration from database (primary) or .env file (fallback).
 
         This is the preferred method for loading config. Priority:
         1. Database (for refreshed tokens that persist across restarts)
-        2. Environment variables (Azure App Service settings)
-        3. .env file (local development)
+        2. .env file (local development only)
+        
+        Note: DHAN_ACCESS_TOKEN env var is no longer used to avoid conflicts.
+        The token is stored in and loaded from the database.
         """
-        client_id = os.getenv("DHAN_CLIENT_ID")
-
-        # Try loading token from database first (persisted refreshed tokens)
-        db_token = _try_load_token_from_db()
-        if db_token and client_id:
+        # Try loading from database first (primary source)
+        db_token, db_client_id = _try_load_from_db()
+        if db_token and db_client_id:
             stop_loss_percent = float(
                 os.getenv("DHAN_STOP_LOSS_PERCENT", "5.0"))
             return cls(
                 access_token=db_token,
-                client_id=client_id,
+                client_id=db_client_id,
                 default_stop_loss_percent=stop_loss_percent,
             )
 
-        # Fall back to env vars
-        if _has_required_env_vars():
-            return cls.from_env()
-
-        # Finally, try to load from .env file
+        # Fall back to .env file (for local development/initial setup)
         return cls.from_file()
 
     @classmethod

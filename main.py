@@ -305,7 +305,6 @@ def cmd_init(args: argparse.Namespace) -> None:
     config_path = create_sample_config(in_project=True)
     print(f"\n✓ Sample configuration created at: {config_path}")
     print("\nPlease edit the .env file and add your:")
-    print("  - DHAN_ACCESS_TOKEN (from web.dhan.co)")
     print("  - DHAN_CLIENT_ID")
     print("\n⚠️  Add .env to your .gitignore to avoid committing secrets!")
 

@@ -1,7 +1,6 @@
 """Dhan API Client for interacting with Dhan Trading APIs."""
 
 import logging
-import os
 from typing import Optional
 
 import httpx
@@ -93,7 +92,7 @@ class DhanClient:
                     # Special handling for token expiration
                     if response.status_code == 401:
                         logger.error(
-                            "Token has expired! Please update DHAN_ACCESS_TOKEN in environment variables.")
+                            "Token has expired! Please add a new token to the database.")
                         logger.error(
                             "Tokens cannot be refreshed after expiry - they must be renewed BEFORE expiration.")
                 except Exception:
@@ -564,9 +563,6 @@ class DhanClient:
         # Update the config and client headers with the new token
         self.config.access_token = new_token
         self._client.headers["access-token"] = new_token
-
-        # Update environment variable (for in-memory use)
-        os.environ["DHAN_ACCESS_TOKEN"] = new_token
 
         # Save to database for persistence across restarts
         try:
