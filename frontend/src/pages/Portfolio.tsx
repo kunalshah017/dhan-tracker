@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom';
-import { useAuthStore } from '../AuthContext';
+import { useAuthStore } from '../store';
 import { useHoldings, useOrders, useProtectionStatus, useSchedulerStatus, useRunAmoProtection, useCancelAllOrders } from '../hooks';
 import { formatCurrency } from '../utils';
 import { useToast, ToastContainer } from '../components/Toast';
@@ -28,7 +28,7 @@ export function Portfolio() {
             const result = await runAmoMutation.mutateAsync();
             toast.success(result.message || 'AMO protection orders placed');
         } catch (err) {
-            toast.error(err.message);
+            toast.error(err instanceof Error ? err.message : 'Failed to run AMO protection');
         }
     };
 
@@ -37,15 +37,15 @@ export function Portfolio() {
             const result = await cancelMutation.mutateAsync();
             toast.success(result.message || 'All orders cancelled');
         } catch (err) {
-            toast.error(err.message);
+            toast.error(err instanceof Error ? err.message : 'Failed to cancel orders');
         }
     };
 
     // Calculate totals
     const holdings = holdingsData?.holdings || [];
     const orders = ordersData?.orders || [];
-    const protection = protectionData || {};
-    const scheduler = schedulerData || {};
+    const protection = protectionData;
+    const scheduler = schedulerData;
 
     const totalInvested = holdings.reduce((sum, h) => sum + (h.average_cost * h.quantity), 0);
     const totalCurrent = holdings.reduce((sum, h) => sum + (h.ltp * h.quantity), 0);
@@ -81,7 +81,7 @@ export function Portfolio() {
                 </div>
                 <div className="stat-card">
                     <div className="stat-label">Protection Orders</div>
-                    <div className="stat-value">{protection.pending_orders || 0}</div>
+                    <div className="stat-value">{protection?.pending_orders || 0}</div>
                 </div>
             </div>
 
@@ -215,7 +215,7 @@ export function Portfolio() {
             )}
 
             {/* Scheduler Status */}
-            {scheduler.jobs && scheduler.jobs.length > 0 && (
+            {scheduler?.jobs && scheduler.jobs.length > 0 && (
                 <div className="card">
                     <div className="card-header">
                         <h2 className="card-title">Scheduler Jobs</h2>

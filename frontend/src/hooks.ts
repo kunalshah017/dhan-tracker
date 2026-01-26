@@ -9,18 +9,27 @@ import {
   cancelAllOrders,
   buyEtf,
 } from "./api";
+import type {
+  HoldingsResponse,
+  OrdersResponse,
+  ProtectionStatus,
+  SchedulerStatus,
+  ETFResponse,
+  BuyOrderRequest,
+  ApiResponse,
+} from "./types";
 
 // Portfolio queries
 export function useHoldings() {
-  return useQuery({
+  return useQuery<HoldingsResponse>({
     queryKey: ["holdings"],
     queryFn: fetchHoldings,
-    staleTime: 30000, // 30 seconds
+    staleTime: 30000,
   });
 }
 
 export function useOrders() {
-  return useQuery({
+  return useQuery<OrdersResponse>({
     queryKey: ["orders"],
     queryFn: fetchOrders,
     staleTime: 30000,
@@ -28,7 +37,7 @@ export function useOrders() {
 }
 
 export function useProtectionStatus() {
-  return useQuery({
+  return useQuery<ProtectionStatus>({
     queryKey: ["protectionStatus"],
     queryFn: fetchProtectionStatus,
     staleTime: 30000,
@@ -36,16 +45,16 @@ export function useProtectionStatus() {
 }
 
 export function useSchedulerStatus() {
-  return useQuery({
+  return useQuery<SchedulerStatus>({
     queryKey: ["schedulerStatus"],
     queryFn: fetchSchedulerStatus,
-    staleTime: 60000, // 1 minute
+    staleTime: 60000,
   });
 }
 
 // ETF queries
 export function useEtfs() {
-  return useQuery({
+  return useQuery<ETFResponse>({
     queryKey: ["etfs"],
     queryFn: fetchEtfs,
     staleTime: 60000,
@@ -56,7 +65,7 @@ export function useEtfs() {
 export function useRunAmoProtection() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useMutation<ApiResponse, Error>({
     mutationFn: runAmoProtection,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -68,7 +77,7 @@ export function useRunAmoProtection() {
 export function useCancelAllOrders() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useMutation<ApiResponse, Error>({
     mutationFn: cancelAllOrders,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["orders"] });
@@ -80,7 +89,7 @@ export function useCancelAllOrders() {
 export function useBuyEtf() {
   const queryClient = useQueryClient();
 
-  return useMutation({
+  return useMutation<ApiResponse, Error, BuyOrderRequest>({
     mutationFn: buyEtf,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["holdings"] });

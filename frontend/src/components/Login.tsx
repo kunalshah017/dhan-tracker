@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useAuthStore } from '../AuthContext';
+import { useState, FormEvent } from 'react';
+import { useAuthStore } from '../store';
 
 export function Login() {
     const [password, setPassword] = useState('');
@@ -7,14 +7,14 @@ export function Login() {
     const [loading, setLoading] = useState(false);
     const login = useAuthStore((state) => state.login);
 
-    const handleSubmit = async (e) => {
+    const handleSubmit = async (e: FormEvent) => {
         e.preventDefault();
         setError(false);
         setLoading(true);
 
         try {
             await login(password);
-        } catch (err) {
+        } catch {
             setError(true);
             setPassword('');
         } finally {

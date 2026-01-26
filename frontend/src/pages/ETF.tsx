@@ -1,11 +1,15 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
-import { useAuthStore } from '../AuthContext';
+import { useAuthStore } from '../store';
 import { useEtfs, useBuyEtf } from '../hooks';
 import { formatCurrency, formatVolume, getCategory } from '../utils';
 import { useToast, ToastContainer } from '../components/Toast';
+import type { ETF, BuyOrderRequest } from '../types';
 
-export function ETF() {
+type FilterType = 'all' | 'discount' | 'premium';
+type FilterCategory = 'all' | 'gold' | 'silver' | 'nifty' | 'bank' | 'it' | 'other';
+
+export function ETFPage() {
     const logout = useAuthStore((state) => state.logout);
     const toast = useToast();
 
@@ -13,15 +17,15 @@ export function ETF() {
     const buyMutation = useBuyEtf();
 
     // Filters
-    const [filterType, setFilterType] = useState('discount');
-    const [filterCategory, setFilterCategory] = useState('all');
+    const [filterType, setFilterType] = useState<FilterType>('discount');
+    const [filterCategory, setFilterCategory] = useState<FilterCategory>('all');
     const [minTurnover, setMinTurnover] = useState(0);
 
     // Buy modal state
     const [showModal, setShowModal] = useState(false);
-    const [selectedEtf, setSelectedEtf] = useState(null);
+    const [selectedEtf, setSelectedEtf] = useState<ETF | null>(null);
     const [quantity, setQuantity] = useState(1);
-    const [orderType, setOrderType] = useState('MARKET');
+    const [orderType, setOrderType] = useState<'MARKET' | 'LIMIT'>('MARKET');
     const [limitPrice, setLimitPrice] = useState(0);
 
     const allEtfs = etfData?.etfs || [];
@@ -44,7 +48,7 @@ export function ETF() {
         ? Math.min(...discountEtfs.map(e => e.discount_premium))
         : 0;
 
-    const openBuyModal = (etf) => {
+    const openBuyModal = (etf: ETF) => {
         setSelectedEtf(etf);
         setQuantity(1);
         setOrderType('MARKET');
@@ -58,13 +62,15 @@ export function ETF() {
     };
 
     const handleBuy = async () => {
+        if (!selectedEtf) return;
+
         if (quantity < 1) {
             toast.error('Quantity must be at least 1');
             return;
         }
 
         try {
-            const data = {
+            const data: BuyOrderRequest = {
                 symbol: selectedEtf.symbol,
                 quantity,
                 order_type: orderType,
@@ -77,7 +83,13 @@ export function ETF() {
             toast.success(result.message || 'Order placed successfully');
             closeBuyModal();
         } catch (err) {
-            toast.error(err.message);
+            toast.error(err instanceof Error ? err.message : 'Failed to place order');
+        }
+    };
+
+    const handleOverlayClick = (e: MouseEvent) => {
+        if (e.target === e.currentTarget) {
+            closeBuyModal();
         }
     };
 
@@ -116,7 +128,7 @@ export function ETF() {
             <div className="filters">
                 <div className="filter-group">
                     <label>Show:</label>
-                    <select value={filterType} onChange={(e) => setFilterType(e.target.value)}>
+                    <select value={filterType} onChange={(e) => setFilterType(e.target.value as FilterType)}>
                         <option value="all">All ETFs</option>
                         <option value="discount">Discount Only</option>
                         <option value="premium">Premium Only</option>
@@ -124,7 +136,7 @@ export function ETF() {
                 </div>
                 <div className="filter-group">
                     <label>Category:</label>
-                    <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value)}>
+                    <select value={filterCategory} onChange={(e) => setFilterCategory(e.target.value as FilterCategory)}>
                         <option value="all">All Categories</option>
                         <option value="gold">Gold</option>
                         <option value="silver">Silver</option>
@@ -219,7 +231,7 @@ export function ETF() {
 
             {/* Buy Modal */}
             {showModal && selectedEtf && (
-                <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && closeBuyModal()}>
+                <div className="modal-overlay" onClick={handleOverlayClick}>
                     <div className="modal">
                         <h2>Buy ETF</h2>
                         <div className="modal-info">
@@ -238,7 +250,7 @@ export function ETF() {
                         </div>
                         <div className="modal-field">
                             <label>Order Type</label>
-                            <select value={orderType} onChange={(e) => setOrderType(e.target.value)}>
+                            <select value={orderType} onChange={(e) => setOrderType(e.target.value as 'MARKET' | 'LIMIT')}>
                                 <option value="MARKET">Market Order</option>
                                 <option value="LIMIT">Limit Order</option>
                             </select>

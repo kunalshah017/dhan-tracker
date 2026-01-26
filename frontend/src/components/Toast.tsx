@@ -1,8 +1,19 @@
 import { create } from 'zustand';
 
-const useToastStore = create((set) => ({
+interface Toast {
+    id: number;
+    message: string;
+    type: 'success' | 'error';
+}
+
+interface ToastState {
+    toasts: Toast[];
+    addToast: (message: string, type?: 'success' | 'error') => void;
+}
+
+const useToastStore = create<ToastState>((set) => ({
     toasts: [],
-    addToast: (message, type = 'success') => {
+    addToast: (message: string, type: 'success' | 'error' = 'success') => {
         const id = Date.now();
         set((state) => ({
             toasts: [...state.toasts, { id, message, type }]
@@ -18,8 +29,8 @@ const useToastStore = create((set) => ({
 export function useToast() {
     const addToast = useToastStore((state) => state.addToast);
     return {
-        success: (message) => addToast(message, 'success'),
-        error: (message) => addToast(message, 'error')
+        success: (message: string) => addToast(message, 'success'),
+        error: (message: string) => addToast(message, 'error')
     };
 }
 
