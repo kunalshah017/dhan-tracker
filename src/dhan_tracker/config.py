@@ -60,7 +60,9 @@ class DhanConfig:
     client_id: str
     base_url: str = "https://api.dhan.co/v2"
 
-    # Stop loss configuration (percentage below current price)
+    # Legacy stop loss settings (kept for backward compatibility)
+    # These are no longer used - protection.py uses ProtectionConfig instead
+    default_stop_loss_from_high_percent: float = 10.0
     default_stop_loss_percent: float = 5.0
 
     @classmethod
@@ -76,12 +78,9 @@ class DhanConfig:
         if not client_id:
             raise ValueError("DHAN_CLIENT_ID environment variable is required")
 
-        stop_loss_percent = float(os.getenv("DHAN_STOP_LOSS_PERCENT", "5.0"))
-
         return cls(
             access_token=access_token,
             client_id=client_id,
-            default_stop_loss_percent=stop_loss_percent,
         )
 
     @classmethod
@@ -98,12 +97,9 @@ class DhanConfig:
         # Try loading from database first (primary source)
         db_token, db_client_id = _try_load_from_db()
         if db_token and db_client_id:
-            stop_loss_percent = float(
-                os.getenv("DHAN_STOP_LOSS_PERCENT", "5.0"))
             return cls(
                 access_token=db_token,
                 client_id=db_client_id,
-                default_stop_loss_percent=stop_loss_percent,
             )
 
         # Fall back to .env file (for local development/initial setup)
@@ -156,11 +152,14 @@ def create_sample_config(in_project: bool = True) -> Path:
 DHAN_ACCESS_TOKEN=your_access_token_here
 DHAN_CLIENT_ID=your_client_id_here
 
-# Stop loss percentage (default: 5%)
-DHAN_STOP_LOSS_PERCENT=5.0
-
 # App password for UI and API access (required)
 APP_PASSWORD=your_secure_password_here
+
+# Email Notifications (Gmail SMTP)
+# Generate an App Password at: https://myaccount.google.com/apppasswords
+GMAIL_SENDER_EMAIL=your_email@gmail.com
+GMAIL_APP_PASSWORD=your_16_char_app_password
+NOTIFICATION_EMAIL=your_email@gmail.com
 """
 
     if in_project:

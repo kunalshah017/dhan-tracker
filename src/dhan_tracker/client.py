@@ -181,6 +181,97 @@ class DhanClient:
 
         return result
 
+    def get_historical_data(
+        self,
+        security_id: str,
+        exchange_segment: str = "NSE_EQ",
+        instrument: str = "EQUITY",
+        from_date: str | None = None,
+        to_date: str | None = None,
+    ) -> dict:
+        """
+        Get daily historical OHLC data for a security.
+
+        Args:
+            security_id: Exchange standard ID for the scrip
+            exchange_segment: NSE_EQ, BSE_EQ, etc.
+            instrument: EQUITY, INDEX, etc.
+            from_date: Start date YYYY-MM-DD (defaults to 1 year ago)
+            to_date: End date YYYY-MM-DD (defaults to today)
+
+        Returns:
+            Dict with open, high, low, close, volume, timestamp arrays
+        """
+        from datetime import datetime, timedelta
+
+        if to_date is None:
+            to_date = datetime.now().strftime("%Y-%m-%d")
+        if from_date is None:
+            from_date = (datetime.now() - timedelta(days=365)
+                         ).strftime("%Y-%m-%d")
+
+        payload = {
+            "securityId": security_id,
+            "exchangeSegment": exchange_segment,
+            "instrument": instrument,
+            "expiryCode": 0,
+            "oi": False,
+            "fromDate": from_date,
+            "toDate": to_date,
+        }
+
+        return self._request("POST", "/charts/historical", json=payload)
+
+    def get_52_week_high(
+        self,
+        security_id: str,
+        exchange_segment: str = "NSE_EQ",
+    ) -> float:
+        """
+        Get 52-week high price for a security.
+
+        Args:
+            security_id: Exchange standard ID
+            exchange_segment: NSE_EQ, BSE_EQ, etc.
+
+        Returns:
+            52-week high price
+        """
+        try:
+            data = self.get_historical_data(
+                security_id=security_id,
+                exchange_segment=exchange_segment,
+            )
+            if data and "high" in data and data["high"]:
+                return max(data["high"])
+            return 0.0
+        except Exception as e:
+            logger.warning(
+                f"Failed to get 52-week high for {security_id}: {e}")
+            return 0.0
+
+    def get_52_week_high_bulk(
+        self,
+        holdings: list[Holding],
+    ) -> dict[str, float]:
+        """
+        Get 52-week high for multiple holdings.
+
+        Args:
+            holdings: List of holdings
+
+        Returns:
+            Dict mapping security_id to 52-week high
+        """
+        result = {}
+        for holding in holdings:
+            segment = "NSE_EQ" if holding.exchange in (
+                "NSE", "ALL") else "BSE_EQ"
+            high = self.get_52_week_high(holding.security_id, segment)
+            result[holding.security_id] = high
+
+        return result
+
     # ==================== Portfolio APIs ====================
 
     def get_holdings(self) -> list[Holding]:

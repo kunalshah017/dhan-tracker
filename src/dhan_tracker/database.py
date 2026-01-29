@@ -1,4 +1,4 @@
-"""Database module for storing API keys and tokens."""
+"""Database module for storing API keys, tokens, and order triggers."""
 
 import logging
 import os
@@ -29,6 +29,36 @@ CREATE TABLE IF NOT EXISTS api_keys (
 );
 
 CREATE INDEX IF NOT EXISTS idx_api_keys_key_name ON api_keys(key_name);
+"""
+
+# Order triggers tracking table
+CREATE_ORDER_TRIGGERS_TABLE = """
+CREATE TABLE IF NOT EXISTS order_triggers (
+    id SERIAL PRIMARY KEY,
+    order_id VARCHAR(100) NOT NULL,
+    trading_symbol VARCHAR(50) NOT NULL,
+    isin VARCHAR(20),
+    security_id VARCHAR(50),
+    transaction_type VARCHAR(10) NOT NULL,
+    quantity INTEGER NOT NULL,
+    trigger_price DECIMAL(12, 2) NOT NULL,
+    executed_price DECIMAL(12, 2),
+    order_type VARCHAR(30),
+    order_status VARCHAR(30) NOT NULL,
+    trigger_type VARCHAR(30) DEFAULT 'STOP_LOSS',
+    cost_price DECIMAL(12, 2),
+    pnl_amount DECIMAL(12, 2),
+    pnl_percent DECIMAL(8, 4),
+    protection_tier VARCHAR(50),
+    triggered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    email_sent BOOLEAN DEFAULT FALSE,
+    email_sent_at TIMESTAMP,
+    metadata JSONB
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_triggers_order_id ON order_triggers(order_id);
+CREATE INDEX IF NOT EXISTS idx_order_triggers_symbol ON order_triggers(trading_symbol);
+CREATE INDEX IF NOT EXISTS idx_order_triggers_triggered_at ON order_triggers(triggered_at);
 """
 
 
@@ -81,6 +111,7 @@ def init_database() -> bool:
         with get_db_connection() as conn:
             with conn.cursor() as cur:
                 cur.execute(CREATE_API_KEYS_TABLE)
+                cur.execute(CREATE_ORDER_TRIGGERS_TABLE)
         logger.info("Database initialized successfully")
         return True
     except Exception as e:
@@ -244,3 +275,174 @@ def get_dhan_token_info() -> Optional[dict]:
         Dict with token details including expiry, or None
     """
     return get_api_key(DHAN_TOKEN_KEY)
+
+
+# ==================== Order Triggers tracking ====================
+
+def save_order_trigger(
+    order_id: str,
+    trading_symbol: str,
+    transaction_type: str,
+    quantity: int,
+    trigger_price: float,
+    order_status: str,
+    isin: Optional[str] = None,
+    security_id: Optional[str] = None,
+    executed_price: Optional[float] = None,
+    order_type: str = "STOP_LOSS_MARKET",
+    trigger_type: str = "STOP_LOSS",
+    cost_price: Optional[float] = None,
+    pnl_amount: Optional[float] = None,
+    pnl_percent: Optional[float] = None,
+    protection_tier: Optional[str] = None,
+    metadata: Optional[dict] = None,
+) -> bool:
+    """
+    Save an order trigger event to the database.
+
+    Args:
+        order_id: Dhan order ID
+        trading_symbol: Stock/ETF symbol
+        transaction_type: SELL (for SL triggers)
+        quantity: Number of units
+        trigger_price: SL trigger price
+        order_status: TRADED, REJECTED, etc.
+        isin: ISIN code
+        security_id: Dhan security ID
+        executed_price: Actual execution price
+        order_type: STOP_LOSS, STOP_LOSS_MARKET
+        trigger_type: STOP_LOSS, TRAILING_SL, etc.
+        cost_price: Original cost price
+        pnl_amount: P&L in rupees
+        pnl_percent: P&L percentage
+        protection_tier: Which protection tier triggered
+        metadata: Additional JSON data
+
+    Returns:
+        True if saved successfully
+    """
+    if not is_database_available():
+        logger.warning("Database not available - trigger not saved")
+        return False
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    INSERT INTO order_triggers (
+                        order_id, trading_symbol, isin, security_id,
+                        transaction_type, quantity, trigger_price, executed_price,
+                        order_type, order_status, trigger_type,
+                        cost_price, pnl_amount, pnl_percent, protection_tier,
+                        metadata
+                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                """, (
+                    order_id, trading_symbol, isin, security_id,
+                    transaction_type, quantity, trigger_price, executed_price,
+                    order_type, order_status, trigger_type,
+                    cost_price, pnl_amount, pnl_percent, protection_tier,
+                    psycopg2.extras.Json(metadata) if metadata else None,
+                ))
+
+        logger.info(
+            f"Order trigger saved: {trading_symbol} @ ₹{trigger_price}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to save order trigger: {e}")
+        return False
+
+
+def get_order_triggers(
+    limit: int = 50,
+    symbol: Optional[str] = None,
+    days: Optional[int] = None,
+) -> list[dict]:
+    """
+    Get order trigger history from the database.
+
+    Args:
+        limit: Maximum number of records to return
+        symbol: Filter by trading symbol
+        days: Filter to last N days
+
+    Returns:
+        List of trigger records
+    """
+    if not is_database_available():
+        return []
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                query = "SELECT * FROM order_triggers WHERE 1=1"
+                params = []
+
+                if symbol:
+                    query += " AND trading_symbol = %s"
+                    params.append(symbol)
+
+                if days:
+                    query += " AND triggered_at >= CURRENT_TIMESTAMP - INTERVAL '%s days'"
+                    params.append(days)
+
+                query += " ORDER BY triggered_at DESC LIMIT %s"
+                params.append(limit)
+
+                cur.execute(query, params)
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Failed to get order triggers: {e}")
+        return []
+
+
+def mark_trigger_email_sent(order_id: str) -> bool:
+    """
+    Mark an order trigger as having email notification sent.
+
+    Args:
+        order_id: The order ID to update
+
+    Returns:
+        True if updated successfully
+    """
+    if not is_database_available():
+        return False
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor() as cur:
+                cur.execute("""
+                    UPDATE order_triggers 
+                    SET email_sent = TRUE, email_sent_at = CURRENT_TIMESTAMP
+                    WHERE order_id = %s
+                """, (order_id,))
+                return cur.rowcount > 0
+    except Exception as e:
+        logger.error(f"Failed to mark email sent for {order_id}: {e}")
+        return False
+
+
+def get_pending_email_triggers() -> list[dict]:
+    """
+    Get order triggers that need email notifications.
+
+    Returns:
+        List of triggers where email_sent = FALSE
+    """
+    if not is_database_available():
+        return []
+
+    try:
+        with get_db_connection() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                cur.execute("""
+                    SELECT * FROM order_triggers 
+                    WHERE email_sent = FALSE
+                    ORDER BY triggered_at DESC
+                """)
+                rows = cur.fetchall()
+                return [dict(row) for row in rows]
+    except Exception as e:
+        logger.error(f"Failed to get pending email triggers: {e}")
+        return []

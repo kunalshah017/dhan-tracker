@@ -66,6 +66,7 @@ def schedule_daily_protection(
         run_immediately: If True, run protection immediately before scheduling
     """
     protection_config = protection_config or ProtectionConfig(
+        stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
         stop_loss_percent=config.default_stop_loss_percent
     )
 
@@ -135,6 +136,7 @@ def run_once_at_market_open(
         protection_config: Protection settings
     """
     protection_config = protection_config or ProtectionConfig(
+        stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
         stop_loss_percent=config.default_stop_loss_percent
     )
 

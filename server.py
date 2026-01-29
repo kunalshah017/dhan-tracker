@@ -34,7 +34,9 @@ from dhan_tracker.client import DhanClient, DhanAPIError
 from dhan_tracker.config import DhanConfig, get_config_file
 from dhan_tracker.protection import PortfolioProtector, ProtectionConfig
 from dhan_tracker.nse_client import NSEClient, NSEError, ETFData
-from dhan_tracker.database import init_database, get_dhan_token_info, is_database_available
+from dhan_tracker.database import init_database, get_dhan_token_info, is_database_available, get_order_triggers
+from dhan_tracker.triggers import check_and_log_triggers, get_trigger_monitor
+from dhan_tracker.notifications import get_notifier
 # fmt: on
 
 
@@ -59,6 +61,8 @@ last_amo_run: Optional[datetime] = None
 last_amo_result: Optional[dict] = None
 last_token_refresh: Optional[datetime] = None
 last_token_refresh_result: Optional[dict] = None
+last_trigger_check: Optional[datetime] = None
+last_trigger_result: Optional[dict] = None
 
 # Load APP_PASSWORD from config
 
@@ -103,12 +107,13 @@ def run_daily_protection():
         client = DhanClient(config)
 
         protection_config = ProtectionConfig(
+            stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
             stop_loss_percent=config.default_stop_loss_percent,
         )
 
         protector = PortfolioProtector(client, protection_config)
 
-        # Force replace existing orders with new LTP-based ones
+        # Force replace existing orders with new 52-week high based ones
         results = protector.protect_portfolio(force=True)
 
         success_count = sum(1 for r in results if r.success)
@@ -207,6 +212,7 @@ def run_amo_protection():
         client = DhanClient(config)
 
         protection_config = ProtectionConfig(
+            stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
             stop_loss_percent=config.default_stop_loss_percent,
         )
 
@@ -251,6 +257,137 @@ def run_amo_protection():
         }
 
 
+def run_trigger_check():
+    """
+    Check for triggered SL orders and log them to database.
+    Sends email notifications for each triggered order.
+    Called periodically during market hours.
+    """
+    global last_trigger_check, last_trigger_result
+
+    logger.info("Checking for triggered orders...")
+
+    try:
+        triggered = check_and_log_triggers()
+
+        last_trigger_check = datetime.now(IST)
+        last_trigger_result = {
+            "status": "success",
+            "timestamp": last_trigger_check.isoformat(),
+            "triggers_found": len(triggered),
+            "details": triggered,
+        }
+
+        if triggered:
+            logger.info(f"Found {len(triggered)} new triggered orders")
+            for t in triggered:
+                pnl = t.get("pnl_amount", 0) or 0
+                logger.info(
+                    f"  → {t['trading_symbol']}: {t['quantity']} units @ ₹{t['trigger_price']:.2f} "
+                    f"(P&L: ₹{pnl:+.2f})"
+                )
+        else:
+            logger.debug("No new triggered orders found")
+
+    except Exception as e:
+        logger.error(f"Trigger check failed: {e}")
+        last_trigger_check = datetime.now(IST)
+        last_trigger_result = {
+            "status": "error",
+            "timestamp": last_trigger_check.isoformat(),
+            "error": str(e),
+        }
+
+
+def run_dynamic_protection_update():
+    """
+    Update protection orders during market hours if prices have moved significantly.
+
+    This runs every 5 minutes during market hours and:
+    1. Checks for triggered orders (logs + emails)
+    2. Updates SL prices if stock moved to a different tier
+
+    Rate limit friendly: Only modifies orders when tier changes.
+    With 4 holdings, max 4 API calls per 5 min = very conservative.
+    """
+    global last_trigger_check, last_trigger_result
+
+    logger.info("=" * 40)
+    logger.info("DYNAMIC PROTECTION UPDATE")
+    logger.info("=" * 40)
+
+    # Step 1: Check for triggered orders
+    run_trigger_check()
+
+    # Step 2: Update protection if prices moved significantly
+    try:
+        config = DhanConfig.load()
+        client = DhanClient(config)
+        protector = PortfolioProtector(client)
+
+        # Get current protection plan (calculates new SL based on current prices)
+        holdings = client.get_holdings()
+        holdings = [h for h in holdings if h.available_qty > 0]
+
+        if not holdings:
+            logger.info("No holdings to update")
+            return
+
+        # Fetch fresh market data
+        protector.fetch_all_market_data(holdings)
+
+        # Get existing Super Orders (DDPI orders placed at 8:30 AM)
+        existing_super_orders = protector.get_existing_protection(holdings)
+
+        updates_made = 0
+        for holding in holdings:
+            ltp = protector._ltp_cache.get(holding.security_id, 0)
+            if ltp <= 0:
+                continue
+
+            cost_price = holding.avg_cost_price
+            new_sl, tier_desc = protector.calculate_tiered_stop_loss(
+                cost_price, ltp)
+
+            # Check if there's an existing Super Order
+            existing = existing_super_orders.get(holding.security_id)
+            if existing:
+                old_trigger = existing.stop_loss_leg.price if existing.stop_loss_leg else 0
+
+                # Only update if SL changed by more than ₹0.50 or 0.5%
+                sl_change = abs(new_sl - old_trigger)
+                sl_change_pct = (sl_change / old_trigger *
+                                 100) if old_trigger > 0 else 100
+
+                if sl_change > 0.50 and sl_change_pct > 0.5:
+                    try:
+                        # Modify Super Order's stop loss leg
+                        client.modify_super_order(
+                            order_id=existing.order_id,
+                            leg_name="STOP_LOSS_LEG",
+                            stop_loss_price=new_sl,
+                        )
+                        logger.info(
+                            f"✓ Updated {holding.trading_symbol}: "
+                            f"SL ₹{old_trigger:.2f} → ₹{new_sl:.2f} ({tier_desc})"
+                        )
+                        updates_made += 1
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to update {holding.trading_symbol}: {e}")
+                else:
+                    logger.debug(
+                        f"{holding.trading_symbol}: No significant change (SL ₹{old_trigger:.2f})")
+
+        if updates_made > 0:
+            logger.info(f"Updated {updates_made} protection orders")
+        else:
+            logger.info("No protection updates needed")
+
+    except Exception as e:
+        logger.error(f"Dynamic protection update failed: {e}")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Manage scheduler lifecycle and database initialization."""
@@ -278,31 +415,48 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
 
-    # Schedule AMO protection at 8:30 AM IST (before market opens)
-    # This places SL orders that will be active from market open (9:15 AM)
+    # Schedule Super Order protection at 8:30 AM IST (before market opens)
+    # Places DDPI Super Orders that are active from market open (9:15 AM)
+    # Protects against gap-down scenarios
     scheduler.add_job(
-        run_amo_protection,
+        run_daily_protection,
         CronTrigger(hour=8, minute=30, timezone=IST),
-        id="amo_protection",
-        name="Pre-Market AMO Protection",
+        id="pre_market_protection",
+        name="Pre-Market Super Order Protection (DDPI)",
         replace_existing=True,
     )
 
-    # Schedule Super Order protection at 9:20 AM IST (after market opens at 9:15)
-    # This can add target + trailing SL during market hours
+    # Dynamic protection updates every 5 minutes during market hours (9:15 AM - 3:30 PM)
+    # This does TWO things:
+    # 1. Checks for triggered orders → logs to DB + sends email
+    # 2. Updates SL prices if stock moved to a different tier
     scheduler.add_job(
-        run_daily_protection,
-        CronTrigger(hour=9, minute=20, timezone=IST),
-        id="daily_protection",
-        name="Daily Portfolio Protection (Super Orders)",
+        run_dynamic_protection_update,
+        CronTrigger(
+            hour="9-15",
+            minute="*/5",
+            timezone=IST,
+        ),
+        id="dynamic_protection",
+        name="Dynamic Protection Update (every 5 min)",
         replace_existing=True,
     )
 
     scheduler.start()
     logger.info("Scheduler started:")
-    logger.info("  - Token Refresh: Every 12 hours (proactive, before expiry)")
-    logger.info("  - AMO Protection: 8:30 AM IST (pre-market SL orders)")
-    logger.info("  - Daily Protection: 9:20 AM IST (Super Orders with target)")
+    logger.info("  - Token Refresh: Every 12 hours (proactive)")
+    logger.info("  - Pre-Market Protection: 8:30 AM IST (Super Orders via DDPI)")
+    logger.info(
+        "  - Dynamic Updates: Every 5 min during market (9:15 AM - 3:30 PM)")
+    logger.info("    → Monitors triggers + updates SL if tier changes")
+
+    # Check email configuration
+    notifier = get_notifier()
+    if notifier.is_configured():
+        logger.info("Email notifications: ENABLED")
+    else:
+        logger.warning(
+            "Email notifications: DISABLED (configure GMAIL_* env vars)")
 
     yield
 
@@ -520,6 +674,7 @@ async def get_protection_status():
         config = DhanConfig.load()
         client = DhanClient(config)
         protection_config = ProtectionConfig(
+            stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
             stop_loss_percent=config.default_stop_loss_percent,
         )
 
@@ -556,6 +711,7 @@ async def run_protection(force: bool = True, background_tasks: BackgroundTasks =
         config = DhanConfig.load()
         client = DhanClient(config)
         protection_config = ProtectionConfig(
+            stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
             stop_loss_percent=config.default_stop_loss_percent,
         )
 
@@ -654,6 +810,7 @@ async def run_amo_protection_api(amo_time: str = "OPEN"):
         config = DhanConfig.load()
         client = DhanClient(config)
         protection_config = ProtectionConfig(
+            stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
             stop_loss_percent=config.default_stop_loss_percent,
         )
 
@@ -818,7 +975,7 @@ async def trigger_scheduled_job(job_type: str = "super"):
     Manually trigger a scheduled protection job.
 
     Args:
-        job_type: 'super' for Super Orders, 'amo' for AMO orders
+        job_type: 'super' for Super Orders, 'amo' for AMO orders, 'trigger_check' for SL trigger check
     """
     if job_type == "amo":
         run_amo_protection()
@@ -827,6 +984,13 @@ async def trigger_scheduled_job(job_type: str = "super"):
             "job": "amo_protection",
             "result": last_amo_result,
         }
+    elif job_type == "trigger_check":
+        run_trigger_check()
+        return {
+            "status": "triggered",
+            "job": "trigger_check",
+            "result": last_trigger_result,
+        }
     else:
         run_daily_protection()
         return {
@@ -834,6 +998,80 @@ async def trigger_scheduled_job(job_type: str = "super"):
             "job": "daily_protection",
             "result": last_protection_result,
         }
+
+
+# ==================== Trigger History Endpoints ====================
+
+@app.get("/api/triggers", dependencies=[Depends(verify_password)])
+async def get_trigger_history(limit: int = 50, symbol: Optional[str] = None, days: Optional[int] = None):
+    """
+    Get order trigger history from database.
+
+    Args:
+        limit: Maximum number of records to return (default 50)
+        symbol: Filter by trading symbol
+        days: Filter to last N days
+
+    Returns:
+        List of triggered orders with P&L details
+    """
+    triggers = get_order_triggers(limit=limit, symbol=symbol, days=days)
+
+    # Calculate summary stats
+    total_pnl = sum(t.get("pnl_amount", 0) or 0 for t in triggers)
+    profit_count = sum(1 for t in triggers if (
+        t.get("pnl_amount", 0) or 0) >= 0)
+
+    return {
+        "triggers": triggers,
+        "count": len(triggers),
+        "total_pnl": total_pnl,
+        "profit_triggers": profit_count,
+        "loss_triggers": len(triggers) - profit_count,
+    }
+
+
+@app.get("/api/triggers/summary", dependencies=[Depends(verify_password)])
+async def get_trigger_summary(days: int = 30):
+    """
+    Get summary statistics for triggered orders.
+
+    Args:
+        days: Look back period in days (default 30)
+
+    Returns:
+        Summary stats including total P&L, win rate, etc.
+    """
+    monitor = get_trigger_monitor()
+    return monitor.get_trigger_summary(days=days)
+
+
+@app.post("/api/triggers/check", dependencies=[Depends(verify_password)])
+async def check_triggers_now():
+    """
+    Manually check for triggered orders now.
+
+    Scans recent orders for executed SL orders and logs them.
+    Also sends email notifications if configured.
+    """
+    run_trigger_check()
+    return {
+        "status": "completed",
+        "result": last_trigger_result,
+    }
+
+
+@app.get("/api/notifications/status", dependencies=[Depends(verify_password)])
+async def get_notification_status():
+    """
+    Get email notification configuration status.
+    """
+    notifier = get_notifier()
+    return {
+        "email_configured": notifier.is_configured(),
+        "sender_email": notifier.config.sender_email if notifier.is_configured() else None,
+        "recipient_email": notifier.config.recipient_email if notifier.is_configured() else None,
+    }
 
 
 # ETF Endpoints

@@ -334,6 +334,7 @@ def cmd_status(args: argparse.Namespace) -> None:
     """Show protection status command."""
     config = DhanConfig.from_file()
     protection_config = ProtectionConfig(
+        stop_loss_from_high_percent=config.default_stop_loss_from_high_percent,
         stop_loss_percent=config.default_stop_loss_percent,
     )
 
@@ -346,6 +347,7 @@ def cmd_protect(args: argparse.Namespace) -> None:
     """Run protection command."""
     config = DhanConfig.from_file()
     protection_config = ProtectionConfig(
+        stop_loss_from_high_percent=args.stop_loss_from_high or config.default_stop_loss_from_high_percent,
         stop_loss_percent=args.stop_loss or config.default_stop_loss_percent,
         target_percent=args.target or 20.0,
         trailing_jump=args.trail or 0.0,
@@ -440,10 +442,16 @@ Examples:
     protect_parser = subparsers.add_parser(
         "protect", help="Place protective DDPI super orders")
     protect_parser.add_argument(
+        "--sl-from-high", "--stop-loss-from-high",
+        type=float,
+        dest="stop_loss_from_high",
+        help="Stop loss percentage below 52-week high (default: from config or 10%%)",
+    )
+    protect_parser.add_argument(
         "--sl", "--stop-loss",
         type=float,
         dest="stop_loss",
-        help="Stop loss percentage below LTP (default: from config or 5%%)",
+        help="Fallback stop loss percentage below LTP (default: from config or 5%%)",
     )
     protect_parser.add_argument(
         "--target",
