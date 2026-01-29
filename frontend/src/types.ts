@@ -1,10 +1,13 @@
 // API Response Types
 export interface Holding {
   symbol: string;
-  trading_symbol?: string;
   quantity: number;
-  average_cost: number;
+  avg_cost: number;
   ltp: number;
+  invested: number;
+  current_value: number;
+  pnl: number;
+  pnl_percent: number;
 }
 
 export interface Order {
@@ -18,9 +21,13 @@ export interface Order {
 
 export interface ProtectionStatus {
   total_holdings: number;
-  protected_holdings: number;
-  unprotected_holdings: number;
-  pending_orders: number;
+  protected_count: number;
+  unprotected_count: number;
+  total_value: number;
+  protected_value: number;
+  protection_percent: number;
+  last_run?: string;
+  last_result?: Record<string, unknown>;
 }
 
 export interface SchedulerJob {
@@ -35,6 +42,10 @@ export interface SchedulerStatus {
 
 export interface HoldingsResponse {
   holdings: Holding[];
+  total_invested: number;
+  total_current: number;
+  total_pnl: number;
+  total_pnl_percent: number;
 }
 
 export interface OrdersResponse {

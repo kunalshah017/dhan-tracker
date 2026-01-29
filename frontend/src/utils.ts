@@ -1,7 +1,10 @@
 import type { ETF } from "./types";
 
 // Format currency in INR
-export function formatCurrency(value: number): string {
+export function formatCurrency(value: number | undefined | null): string {
+  if (value === undefined || value === null || isNaN(value)) {
+    return "₹0.00";
+  }
   return "₹" + value.toLocaleString("en-IN", { maximumFractionDigits: 2 });
 }
 

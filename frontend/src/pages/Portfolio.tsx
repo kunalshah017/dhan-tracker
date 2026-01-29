@@ -47,10 +47,11 @@ export function Portfolio() {
     const protection = protectionData;
     const scheduler = schedulerData;
 
-    const totalInvested = holdings.reduce((sum, h) => sum + (h.average_cost * h.quantity), 0);
-    const totalCurrent = holdings.reduce((sum, h) => sum + (h.ltp * h.quantity), 0);
-    const totalPnL = totalCurrent - totalInvested;
-    const pnlPercent = totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0;
+    // Use pre-calculated totals from API, fallback to manual calculation
+    const totalInvested = holdingsData?.total_invested ?? holdings.reduce((sum, h) => sum + (h.invested || 0), 0);
+    const totalCurrent = holdingsData?.total_current ?? holdings.reduce((sum, h) => sum + (h.current_value || 0), 0);
+    const totalPnL = holdingsData?.total_pnl ?? (totalCurrent - totalInvested);
+    const pnlPercent = holdingsData?.total_pnl_percent ?? (totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0);
 
     return (
         <div className="dashboard">
@@ -76,12 +77,12 @@ export function Portfolio() {
                 <div className="stat-card">
                     <div className="stat-label">Total P&L</div>
                     <div className={`stat-value ${totalPnL >= 0 ? 'positive' : 'negative'}`}>
-                        {formatCurrency(totalPnL)} ({pnlPercent.toFixed(2)}%)
+                        {formatCurrency(totalPnL)} ({(pnlPercent || 0).toFixed(2)}%)
                     </div>
                 </div>
                 <div className="stat-card">
-                    <div className="stat-label">Protection Orders</div>
-                    <div className="stat-value">{protection?.pending_orders || 0}</div>
+                    <div className="stat-label">Protected</div>
+                    <div className="stat-value">{protection?.protected_count || 0} / {protection?.total_holdings || 0}</div>
                 </div>
             </div>
 
@@ -109,19 +110,15 @@ export function Portfolio() {
                             </thead>
                             <tbody>
                                 {holdings.map((h) => {
-                                    const invested = h.average_cost * h.quantity;
-                                    const current = h.ltp * h.quantity;
-                                    const pnl = current - invested;
-                                    const pnlPct = invested > 0 ? (pnl / invested) * 100 : 0;
                                     return (
                                         <tr key={h.symbol}>
                                             <td><strong>{h.symbol}</strong></td>
                                             <td className="text-right">{h.quantity}</td>
-                                            <td className="text-right">{formatCurrency(h.average_cost)}</td>
+                                            <td className="text-right">{formatCurrency(h.avg_cost)}</td>
                                             <td className="text-right">{formatCurrency(h.ltp)}</td>
-                                            <td className="text-right">{formatCurrency(current)}</td>
-                                            <td className={`text-right ${pnl >= 0 ? 'positive' : 'negative'}`}>
-                                                {formatCurrency(pnl)} ({pnlPct.toFixed(2)}%)
+                                            <td className="text-right">{formatCurrency(h.current_value)}</td>
+                                            <td className={`text-right ${(h.pnl || 0) >= 0 ? 'positive' : 'negative'}`}>
+                                                {formatCurrency(h.pnl)} ({(h.pnl_percent || 0).toFixed(2)}%)
                                             </td>
                                         </tr>
                                     );
@@ -199,15 +196,15 @@ export function Portfolio() {
                             </div>
                             <div className="protection-item">
                                 <span className="protection-label">Protected</span>
-                                <span className="protection-value">{protection.protected_holdings || 0}</span>
+                                <span className="protection-value">{protection.protected_count || 0}</span>
                             </div>
                             <div className="protection-item">
                                 <span className="protection-label">Unprotected</span>
-                                <span className="protection-value">{protection.unprotected_holdings || 0}</span>
+                                <span className="protection-value">{protection.unprotected_count || 0}</span>
                             </div>
                             <div className="protection-item">
-                                <span className="protection-label">Pending Orders</span>
-                                <span className="protection-value">{protection.pending_orders || 0}</span>
+                                <span className="protection-label">Protection %</span>
+                                <span className="protection-value">{(protection.protection_percent || 0).toFixed(1)}%</span>
                             </div>
                         </div>
                     </div>
