@@ -389,6 +389,22 @@ tr:hover {
   color: var(--accent-orange);
 }
 
+/* ETF Links */
+.etf-link {
+  color: var(--accent-blue);
+  text-decoration: none;
+  transition: color 0.2s ease;
+}
+
+.etf-link:hover {
+  color: var(--text-primary);
+  text-decoration: underline;
+}
+
+.etf-link strong {
+  font-weight: 600;
+}
+
 /* Modals */
 .modal-overlay {
   position: fixed;

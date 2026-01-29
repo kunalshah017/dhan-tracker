@@ -36,3 +36,9 @@ export function getCategory(etf: ETF): ETFCategory {
   if (symbol.includes("NIFTY") || underlying.includes("NIFTY")) return "nifty";
   return "other";
 }
+
+// Generate NSE quote URL for an ETF
+export function getNseUrl(symbol: string, _underlying?: string): string {
+  // NSE uses the symbol query parameter for quotes
+  return `https://www.nseindia.com/get-quotes/equity?symbol=${encodeURIComponent(symbol)}`;
+}

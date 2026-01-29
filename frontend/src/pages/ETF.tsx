@@ -2,7 +2,7 @@ import { useState, useMemo, MouseEvent } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store';
 import { useEtfs, useBuyEtf } from '../hooks';
-import { formatCurrency, formatVolume, getCategory } from '../utils';
+import { formatCurrency, formatVolume, getCategory, getNseUrl } from '../utils';
 import { useToast, ToastContainer } from '../components/Toast';
 import type { ETF, BuyOrderRequest } from '../types';
 
@@ -193,7 +193,14 @@ export function ETFPage() {
                                     return (
                                         <tr key={e.symbol}>
                                             <td>
-                                                <strong>{e.symbol}</strong>
+                                                <a
+                                                    href={getNseUrl(e.symbol, e.underlying)}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="etf-link"
+                                                >
+                                                    <strong>{e.symbol}</strong>
+                                                </a>
                                                 {e.discount_premium < -2 && (
                                                     <span className="badge badge-success">Great Buy</span>
                                                 )}
