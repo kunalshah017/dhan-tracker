@@ -415,39 +415,54 @@ async def lifespan(app: FastAPI):
         replace_existing=True,
     )
 
-    # Schedule Super Order protection at 8:30 AM IST (before market opens)
-    # Places DDPI Super Orders that are active from market open (9:15 AM)
-    # Protects against gap-down scenarios
+    # Schedule Super Order protection at 9:16 AM IST (right after market opens at 9:15)
+    # Super Orders use DDPI = no TPIN needed!
+    # Places protection orders as soon as market opens
     scheduler.add_job(
         run_daily_protection,
-        CronTrigger(hour=8, minute=30, timezone=IST),
-        id="pre_market_protection",
-        name="Pre-Market Super Order Protection (DDPI)",
+        CronTrigger(hour=9, minute=16, timezone=IST),
+        id="market_open_protection",
+        name="Market Open Super Order Protection (9:16 AM)",
         replace_existing=True,
     )
 
-    # Dynamic protection updates every 5 minutes during market hours (9:15 AM - 3:30 PM)
+    # Dynamic protection updates every 5 minutes during market hours (9:20 AM - 3:30 PM)
     # This does TWO things:
     # 1. Checks for triggered orders → logs to DB + sends email
     # 2. Updates SL prices if stock moved to a different tier
+    # Starts at 9:20 to avoid overlap with 9:16 AM job
     scheduler.add_job(
         run_dynamic_protection_update,
         CronTrigger(
             hour="9-15",
-            minute="*/5",
+            minute="20,25,30,35,40,45,50,55",
             timezone=IST,
         ),
         id="dynamic_protection",
-        name="Dynamic Protection Update (every 5 min)",
+        name="Dynamic Protection Update (every 5 min from 9:20)",
+        replace_existing=True,
+    )
+
+    # Also run at :00, :05, :10, :15 for hours 10-15
+    scheduler.add_job(
+        run_dynamic_protection_update,
+        CronTrigger(
+            hour="10-15",
+            minute="0,5,10,15",
+            timezone=IST,
+        ),
+        id="dynamic_protection_2",
+        name="Dynamic Protection Update (10AM-3PM)",
         replace_existing=True,
     )
 
     scheduler.start()
     logger.info("Scheduler started:")
     logger.info("  - Token Refresh: Every 12 hours (proactive)")
-    logger.info("  - Pre-Market Protection: 8:30 AM IST (Super Orders via DDPI)")
     logger.info(
-        "  - Dynamic Updates: Every 5 min during market (9:15 AM - 3:30 PM)")
+        "  - Market Open Protection: 9:16 AM IST (Super Orders via DDPI)")
+    logger.info(
+        "  - Dynamic Updates: Every 5 min during market (9:20 AM - 3:30 PM)")
     logger.info("    → Monitors triggers + updates SL if tier changes")
 
     # Check email configuration
@@ -758,7 +773,7 @@ async def run_protection(force: bool = True, background_tasks: BackgroundTasks =
 
 @app.post("/api/protection/cancel", dependencies=[Depends(verify_password)])
 async def cancel_protection():
-    """Cancel all existing protection orders."""
+    """Cancel all existing protection orders (both Super Orders and regular AMO orders)."""
     try:
         config = DhanConfig.load()
         client = DhanClient(config)
@@ -766,12 +781,44 @@ async def cancel_protection():
 
         protector = PortfolioProtector(client, protection_config)
         holdings = client.get_holdings()
-        cancelled = protector.cancel_existing_orders(holdings)
+
+        # Cancel Super Orders
+        super_cancelled = protector.cancel_existing_orders(holdings)
+
+        # Cancel pending regular orders (AMO SL orders)
+        amo_cancelled = 0
+        try:
+            orders = client.get_orders()
+            for order in orders:
+                order_status = order.get("orderStatus", "")
+                order_type = order.get("orderType", "")
+                transaction_type = order.get("transactionType", "")
+
+                # Cancel pending SELL SL orders (AMO protection orders)
+                if (
+                    order_status in ["PENDING", "TRANSIT", "AMO REQ RECEIVED"]
+                    and transaction_type == "SELL"
+                    and order_type in ["STOP_LOSS", "STOP_LOSS_MARKET"]
+                ):
+                    try:
+                        order_id = order.get("orderId", "")
+                        client.cancel_order(order_id)
+                        amo_cancelled += 1
+                        logger.info(f"Cancelled AMO order {order_id}")
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to cancel order {order.get('orderId')}: {e}")
+        except Exception as e:
+            logger.warning(f"Failed to fetch/cancel regular orders: {e}")
+
+        total_cancelled = super_cancelled + amo_cancelled
 
         return {
             "status": "success",
-            "message": f"Cancelled {cancelled} protection orders",
-            "cancelled_count": cancelled,
+            "message": f"Cancelled {total_cancelled} protection orders ({super_cancelled} Super, {amo_cancelled} AMO)",
+            "cancelled_count": total_cancelled,
+            "super_orders_cancelled": super_cancelled,
+            "amo_orders_cancelled": amo_cancelled,
         }
 
     except DhanAPIError as e:

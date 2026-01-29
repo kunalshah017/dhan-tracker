@@ -26,9 +26,9 @@ export function Portfolio() {
     const handleRunAmo = async () => {
         try {
             const result = await runAmoMutation.mutateAsync();
-            toast.success(result.message || 'AMO protection orders placed');
+            toast.success(result.message || 'Super Order protection placed');
         } catch (err) {
-            toast.error(err instanceof Error ? err.message : 'Failed to run AMO protection');
+            toast.error(err instanceof Error ? err.message : 'Failed to run protection');
         }
     };
 
@@ -139,7 +139,7 @@ export function Portfolio() {
                             onClick={handleRunAmo}
                             disabled={runAmoMutation.isPending}
                         >
-                            {runAmoMutation.isPending ? 'Running...' : 'Run AMO Protection'}
+                            {runAmoMutation.isPending ? 'Running...' : '🛡️ Run Protection (DDPI)'}
                         </button>
                         <button
                             className="btn btn-danger btn-sm"

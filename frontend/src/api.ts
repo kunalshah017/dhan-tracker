@@ -55,7 +55,10 @@ export const fetchEtfs = (): Promise<ETFResponse> =>
   api<ETFResponse>("/api/etf");
 
 export const runAmoProtection = (): Promise<ApiResponse> =>
-  api<ApiResponse>("/api/protection/run-amo", { method: "POST" });
+  api<ApiResponse>("/api/protection/run", { method: "POST" });
+
+export const runSuperOrderProtection = (): Promise<ApiResponse> =>
+  api<ApiResponse>("/api/protection/run", { method: "POST" });
 
 export const cancelAllOrders = (): Promise<ApiResponse> =>
   api<ApiResponse>("/api/protection/cancel", { method: "POST" });
