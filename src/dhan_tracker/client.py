@@ -620,7 +620,8 @@ class DhanClient:
         from datetime import datetime, timedelta
 
         # Use raw httpx for this since it's a different endpoint pattern
-        response = httpx.post(
+        # NOTE: RenewToken uses GET, not POST (confirmed from official Dhan SDK)
+        response = httpx.get(
             "https://api.dhan.co/v2/RenewToken",
             headers={
                 "access-token": self.config.access_token,
