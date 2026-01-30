@@ -15,8 +15,10 @@ export interface Order {
   tradingSymbol: string;
   quantity: number;
   price: number;
+  triggerPrice?: number;
   transactionType: string;
   orderStatus: string;
+  orderType?: string;
 }
 
 export interface ProtectionStatus {

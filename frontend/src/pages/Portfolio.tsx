@@ -1,17 +1,23 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store';
 import { useHoldings, useOrders, useProtectionStatus, useSchedulerStatus, useRunAmoProtection, useCancelAllOrders, useTokenStatus, useRefreshToken } from '../hooks';
 import { formatCurrency } from '../utils';
 import { useToast, ToastContainer } from '../components/Toast';
+import type { Order } from '../types';
+import './Portfolio.css';
 
 export function Portfolio() {
     const logout = useAuthStore((state) => state.logout);
     const toast = useToast();
+    const [showOrders, setShowOrders] = useState(false);
+    const [expandedRow, setExpandedRow] = useState<string | null>(null);
+    const [confirmDialog, setConfirmDialog] = useState<{ type: 'protect' | 'cancel' | null; open: boolean }>({ type: null, open: false });
 
     const { data: holdingsData, isLoading: holdingsLoading, refetch: refetchHoldings } = useHoldings();
     const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useOrders();
     const { data: protectionData, refetch: refetchProtection } = useProtectionStatus();
-    const { data: schedulerData, refetch: refetchScheduler } = useSchedulerStatus();
+    const { data: schedulerData } = useSchedulerStatus();
     const { data: tokenData, refetch: refetchToken } = useTokenStatus();
 
     const runAmoMutation = useRunAmoProtection();
@@ -22,277 +28,332 @@ export function Portfolio() {
         refetchHoldings();
         refetchOrders();
         refetchProtection();
-        refetchScheduler();
         refetchToken();
     };
 
-    const handleRunAmo = async () => {
+    const handleRunProtection = async () => {
+        setConfirmDialog({ type: null, open: false });
         try {
             const result = await runAmoMutation.mutateAsync();
-            toast.success(result.message || 'Super Order protection placed');
+            toast.success(result.message || 'Protection orders placed');
+            refreshAll();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to run protection');
         }
     };
 
     const handleCancelAll = async () => {
+        setConfirmDialog({ type: null, open: false });
         try {
             const result = await cancelMutation.mutateAsync();
             toast.success(result.message || 'All orders cancelled');
+            refreshAll();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to cancel orders');
         }
     };
 
+    const openConfirmDialog = (type: 'protect' | 'cancel') => {
+        setConfirmDialog({ type, open: true });
+    };
+
+    const closeConfirmDialog = () => {
+        setConfirmDialog({ type: null, open: false });
+    };
+
     const handleRefreshToken = async () => {
         try {
             await refreshTokenMutation.mutateAsync();
-            toast.success('API token refreshed successfully');
+            toast.success('API token refreshed');
             refetchToken();
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to refresh token');
         }
     };
 
-    // Calculate totals
     const holdings = holdingsData?.holdings || [];
     const orders = ordersData?.orders || [];
-    const protection = protectionData;
-    const scheduler = schedulerData;
+    // protectionData available for future use
+    void protectionData;
 
-    // Use pre-calculated totals from API, fallback to manual calculation
-    const totalInvested = holdingsData?.total_invested ?? holdings.reduce((sum, h) => sum + (h.invested || 0), 0);
-    const totalCurrent = holdingsData?.total_current ?? holdings.reduce((sum, h) => sum + (h.current_value || 0), 0);
-    const totalPnL = holdingsData?.total_pnl ?? (totalCurrent - totalInvested);
-    const pnlPercent = holdingsData?.total_pnl_percent ?? (totalInvested > 0 ? (totalPnL / totalInvested) * 100 : 0);
+    const totalInvested = holdingsData?.total_invested ?? 0;
+    const totalCurrent = holdingsData?.total_current ?? 0;
+    const totalPnL = holdingsData?.total_pnl ?? 0;
+    const pnlPercent = holdingsData?.total_pnl_percent ?? 0;
+
+    // Create a map of protected symbols from orders
+    const protectedSymbols = new Map<string, Order>();
+    orders.forEach(o => {
+        if (o.orderStatus !== 'CANCELLED' && o.orderStatus !== 'REJECTED') {
+            protectedSymbols.set(o.tradingSymbol, o);
+        }
+    });
+
+    // Merge holdings with protection data
+    const enrichedHoldings = holdings.map(h => ({
+        ...h,
+        isProtected: protectedSymbols.has(h.symbol),
+        protectionOrder: protectedSymbols.get(h.symbol),
+        triggerPrice: protectedSymbols.get(h.symbol)?.triggerPrice || 0,
+    }));
+
+    const protectedCount = enrichedHoldings.filter(h => h.isProtected).length;
+    const protectionPercent = holdings.length > 0 ? (protectedCount / holdings.length) * 100 : 0;
+
+    const getProtectionTier = (h: typeof enrichedHoldings[0]) => {
+        if (!h.isProtected || !h.triggerPrice) return null;
+        const pnlAtTrigger = ((h.triggerPrice - h.avg_cost) / h.avg_cost) * 100;
+        if (pnlAtTrigger >= 30) return { tier: 'EXCELLENT', color: '#10b981', icon: '◆◆◆' };
+        if (pnlAtTrigger >= 15) return { tier: 'GOOD', color: '#3b82f6', icon: '◆◆' };
+        if (pnlAtTrigger >= 0) return { tier: 'SAFE', color: '#f59e0b', icon: '◆' };
+        return { tier: 'RECOVERY', color: '#ef4444', icon: '○' };
+    };
 
     return (
-        <div className="dashboard">
-            <header className="header">
-                <h1>📊 Portfolio Dashboard</h1>
-                <div className="header-actions">
-                    <Link to="/etf" className="btn-link">ETF Recommendations →</Link>
-                    <button className="btn btn-primary" onClick={refreshAll}>Refresh</button>
-                    <button className="btn btn-secondary" onClick={logout}>Logout</button>
+        <div className="portfolio-shell">
+            {/* Header Bar */}
+            <header className="portfolio-header">
+                <div className="header-brand">
+                    <span className="brand-icon">◈</span>
+                    <h1>DHAN<span className="brand-accent">TRACKER</span></h1>
                 </div>
+                <nav className="header-nav">
+                    <Link to="/etf" className="nav-link">ETF Scanner</Link>
+                    <button className="nav-btn" onClick={refreshAll}>
+                        <span className="refresh-icon">↻</span>
+                    </button>
+                    <button className="nav-btn logout" onClick={logout}>Exit</button>
+                </nav>
             </header>
 
-            {/* Stats */}
-            <div className="stats-grid">
-                <div className="stat-card">
-                    <div className="stat-label">Total Invested</div>
-                    <div className="stat-value">{formatCurrency(totalInvested)}</div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-label">Current Value</div>
-                    <div className="stat-value">{formatCurrency(totalCurrent)}</div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-label">Total P&L</div>
-                    <div className={`stat-value ${totalPnL >= 0 ? 'positive' : 'negative'}`}>
-                        {formatCurrency(totalPnL)} ({(pnlPercent || 0).toFixed(2)}%)
+            {/* Main Content */}
+            <main className="portfolio-main">
+                {/* Hero Stats */}
+                <section className="hero-stats">
+                    <div className="stat-block primary">
+                        <div className="stat-eyebrow">Portfolio Value</div>
+                        <div className="stat-amount">{formatCurrency(totalCurrent)}</div>
+                        <div className={`stat-delta ${totalPnL >= 0 ? 'up' : 'down'}`}>
+                            {totalPnL >= 0 ? '▲' : '▼'} {formatCurrency(Math.abs(totalPnL))}
+                            <span className="delta-percent">({pnlPercent.toFixed(2)}%)</span>
+                        </div>
                     </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-label">Protected</div>
-                    <div className="stat-value">{protection?.protected_count || 0} / {protection?.total_holdings || 0}</div>
-                </div>
-            </div>
+                    <div className="stat-block">
+                        <div className="stat-eyebrow">Invested</div>
+                        <div className="stat-amount-sm">{formatCurrency(totalInvested)}</div>
+                    </div>
+                    <div className="stat-block">
+                        <div className="stat-eyebrow">Holdings</div>
+                        <div className="stat-amount-sm">{holdings.length}</div>
+                    </div>
+                    <div className="stat-block protection-stat">
+                        <div className="stat-eyebrow">Protected</div>
+                        <div className="protection-ring">
+                            <svg viewBox="0 0 36 36" className="ring-svg">
+                                <path
+                                    className="ring-bg"
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                />
+                                <path
+                                    className="ring-progress"
+                                    strokeDasharray={`${protectionPercent}, 100`}
+                                    d="M18 2.0845 a 15.9155 15.9155 0 0 1 0 31.831 a 15.9155 15.9155 0 0 1 0 -31.831"
+                                />
+                            </svg>
+                            <span className="ring-text">{protectedCount}/{holdings.length}</span>
+                        </div>
+                    </div>
+                </section>
 
-            {/* Holdings Table */}
-            <div className="card">
-                <div className="card-header">
-                    <h2 className="card-title">Holdings ({holdings.length})</h2>
-                </div>
-                <div className="table-container">
-                    {holdingsLoading ? (
-                        <p className="loading">Loading holdings...</p>
-                    ) : holdings.length === 0 ? (
-                        <p className="loading">No holdings found</p>
-                    ) : (
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Symbol</th>
-                                    <th className="text-right">Qty</th>
-                                    <th className="text-right">Avg Cost</th>
-                                    <th className="text-right">LTP</th>
-                                    <th className="text-right">Current Value</th>
-                                    <th className="text-right">P&L</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {holdings.map((h) => {
-                                    return (
-                                        <tr key={h.symbol}>
-                                            <td><strong>{h.symbol}</strong></td>
-                                            <td className="text-right">{h.quantity}</td>
-                                            <td className="text-right">{formatCurrency(h.avg_cost)}</td>
-                                            <td className="text-right">{formatCurrency(h.ltp)}</td>
-                                            <td className="text-right">{formatCurrency(h.current_value)}</td>
-                                            <td className={`text-right ${(h.pnl || 0) >= 0 ? 'positive' : 'negative'}`}>
-                                                {formatCurrency(h.pnl)} ({(h.pnl_percent || 0).toFixed(2)}%)
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-            </div>
-
-            {/* Pending Orders */}
-            <div className="card">
-                <div className="card-header">
-                    <h2 className="card-title">Pending Protection Orders ({orders.length})</h2>
-                    <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {/* Action Bar */}
+                <section className="action-bar">
+                    <div className="action-group">
                         <button
-                            className="btn btn-success btn-sm"
-                            onClick={handleRunAmo}
+                            className="action-btn primary"
+                            onClick={() => openConfirmDialog('protect')}
                             disabled={runAmoMutation.isPending}
                         >
-                            {runAmoMutation.isPending ? 'Running...' : '🛡️ Run Protection (DDPI)'}
+                            <span className="btn-icon">⛊</span>
+                            {runAmoMutation.isPending ? 'Protecting...' : 'Activate Protection'}
                         </button>
                         <button
-                            className="btn btn-danger btn-sm"
-                            onClick={handleCancelAll}
-                            disabled={cancelMutation.isPending}
+                            className="action-btn danger"
+                            onClick={() => openConfirmDialog('cancel')}
+                            disabled={cancelMutation.isPending || orders.length === 0}
                         >
-                            {cancelMutation.isPending ? 'Cancelling...' : 'Cancel All'}
+                            {cancelMutation.isPending ? 'Cancelling...' : 'Cancel All GTT'}
                         </button>
                     </div>
-                </div>
-                <div className="table-container">
-                    {ordersLoading ? (
-                        <p className="loading">Loading orders...</p>
-                    ) : orders.length === 0 ? (
-                        <p className="loading">No pending orders</p>
-                    ) : (
-                        <table>
-                            <thead>
-                                <tr>
-                                    <th>Symbol</th>
-                                    <th className="text-right">Qty</th>
-                                    <th className="text-right">Price</th>
-                                    <th>Type</th>
-                                    <th>Status</th>
-                                </tr>
-                            </thead>
-                            <tbody>
+                    <div className="action-group">
+                        <button
+                            className={`action-btn toggle ${showOrders ? 'active' : ''}`}
+                            onClick={() => setShowOrders(!showOrders)}
+                        >
+                            Orders {orders.length > 0 && <span className="badge">{orders.length}</span>}
+                        </button>
+                    </div>
+                </section>
+
+                {/* Orders Panel (Collapsible) */}
+                {showOrders && (
+                    <section className="orders-panel">
+                        <div className="panel-header">
+                            <h3>Active GTT Orders</h3>
+                            <span className="panel-count">{orders.length} orders</span>
+                        </div>
+                        {ordersLoading ? (
+                            <div className="panel-loading">Loading orders...</div>
+                        ) : orders.length === 0 ? (
+                            <div className="panel-empty">No active protection orders</div>
+                        ) : (
+                            <div className="orders-grid">
                                 {orders.map((o, idx) => (
-                                    <tr key={o.orderId || idx}>
-                                        <td><strong>{o.tradingSymbol}</strong></td>
-                                        <td className="text-right">{o.quantity}</td>
-                                        <td className="text-right">{formatCurrency(o.price)}</td>
-                                        <td>{o.transactionType}</td>
-                                        <td>{o.orderStatus}</td>
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    )}
-                </div>
-            </div>
-
-            {/* Protection Status */}
-            {protection && (
-                <div className="card">
-                    <div className="card-header">
-                        <h2 className="card-title">Protection Status</h2>
-                    </div>
-                    <div className="card-body">
-                        <div className="protection-grid">
-                            <div className="protection-item">
-                                <span className="protection-label">Total Holdings</span>
-                                <span className="protection-value">{protection.total_holdings || 0}</span>
-                            </div>
-                            <div className="protection-item">
-                                <span className="protection-label">Protected</span>
-                                <span className="protection-value">{protection.protected_count || 0}</span>
-                            </div>
-                            <div className="protection-item">
-                                <span className="protection-label">Unprotected</span>
-                                <span className="protection-value">{protection.unprotected_count || 0}</span>
-                            </div>
-                            <div className="protection-item">
-                                <span className="protection-label">Protection %</span>
-                                <span className="protection-value">{(protection.protection_percent || 0).toFixed(1)}%</span>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Scheduler Status */}
-            {scheduler?.jobs && scheduler.jobs.length > 0 && (
-                <div className="card">
-                    <div className="card-header">
-                        <h2 className="card-title">Scheduler Jobs</h2>
-                    </div>
-                    <div className="card-body">
-                        <div className="scheduler-grid">
-                            {scheduler.jobs.map((job, idx) => (
-                                <div key={idx} className="job-card">
-                                    <div className="job-name">{job.id}</div>
-                                    <div className="job-info">
-                                        <p>Next Run: {job.next_run_time || 'Not scheduled'}</p>
-                                        <p>Trigger: {job.trigger}</p>
+                                    <div key={o.orderId || idx} className="order-chip">
+                                        <span className="chip-symbol">{o.tradingSymbol}</span>
+                                        <span className="chip-trigger">@ {formatCurrency(o.triggerPrice || o.price)}</span>
+                                        <span className={`chip-status ${o.orderStatus.toLowerCase()}`}>{o.orderStatus}</span>
                                     </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
+                        )}
+                    </section>
+                )}
+
+                {/* Holdings Table */}
+                <section className="holdings-section">
+                    <div className="section-header">
+                        <h2>Holdings & Protection Status</h2>
+                        <div className="legend">
+                            <span className="legend-item protected">● Protected</span>
+                            <span className="legend-item unprotected">○ Unprotected</span>
                         </div>
                     </div>
-                </div>
-            )}
 
-            {/* API Token Status */}
-            {tokenData && (
-                <div className="card">
-                    <div className="card-header">
-                        <h2 className="card-title">🔑 API Token Status</h2>
-                        <button
-                            className="btn btn-primary btn-sm"
-                            onClick={handleRefreshToken}
-                            disabled={refreshTokenMutation.isPending}
-                        >
-                            {refreshTokenMutation.isPending ? 'Refreshing...' : '🔄 Refresh Token'}
+                    {holdingsLoading ? (
+                        <div className="table-loading">
+                            <div className="loader"></div>
+                            <span>Loading portfolio...</span>
+                        </div>
+                    ) : holdings.length === 0 ? (
+                        <div className="table-empty">
+                            <span className="empty-icon">◇</span>
+                            <p>No holdings found</p>
+                        </div>
+                    ) : (
+                        <div className="holdings-table-wrapper">
+                            <table className="holdings-table">
+                                <thead>
+                                    <tr>
+                                        <th className="col-status"></th>
+                                        <th className="col-symbol">Symbol</th>
+                                        <th className="col-qty">Qty</th>
+                                        <th className="col-price">Avg Cost</th>
+                                        <th className="col-price">LTP</th>
+                                        <th className="col-value">Value</th>
+                                        <th className="col-pnl">P&L</th>
+                                        <th className="col-protection">Protection</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {enrichedHoldings.map((h) => {
+                                        const tier = getProtectionTier(h);
+                                        const isExpanded = expandedRow === h.symbol;
+                                        return (
+                                            <tr
+                                                key={h.symbol}
+                                                className={`holding-row ${h.isProtected ? 'protected' : 'unprotected'} ${isExpanded ? 'expanded' : ''}`}
+                                                onClick={() => setExpandedRow(isExpanded ? null : h.symbol)}
+                                            >
+                                                <td className="col-status">
+                                                    <span className={`status-dot ${h.isProtected ? 'active' : ''}`}></span>
+                                                </td>
+                                                <td className="col-symbol">
+                                                    <span className="symbol-name">{h.symbol}</span>
+                                                </td>
+                                                <td className="col-qty">{h.quantity}</td>
+                                                <td className="col-price">{formatCurrency(h.avg_cost)}</td>
+                                                <td className="col-price">
+                                                    <span className={h.ltp >= h.avg_cost ? 'price-up' : 'price-down'}>
+                                                        {formatCurrency(h.ltp)}
+                                                    </span>
+                                                </td>
+                                                <td className="col-value">{formatCurrency(h.current_value)}</td>
+                                                <td className={`col-pnl ${(h.pnl || 0) >= 0 ? 'positive' : 'negative'}`}>
+                                                    <span className="pnl-amount">{formatCurrency(h.pnl)}</span>
+                                                    <span className="pnl-percent">({(h.pnl_percent || 0).toFixed(1)}%)</span>
+                                                </td>
+                                                <td className="col-protection">
+                                                    {h.isProtected && tier ? (
+                                                        <div className="protection-badge" style={{ '--tier-color': tier.color } as React.CSSProperties}>
+                                                            <span className="tier-icon">{tier.icon}</span>
+                                                            <span className="trigger-price">SL @ {formatCurrency(h.triggerPrice)}</span>
+                                                        </div>
+                                                    ) : (
+                                                        <span className="no-protection">—</span>
+                                                    )}
+                                                </td>
+                                            </tr>
+                                        );
+                                    })}
+                                </tbody>
+                            </table>
+                        </div>
+                    )}
+                </section>
+
+                {/* Footer Status Bar */}
+                <footer className="status-bar">
+                    <div className="status-item">
+                        <span className="status-label">Token</span>
+                        <span className={`status-value ${tokenData?.last_refresh_result?.status === 'success' ? 'ok' : 'warn'}`}>
+                            {tokenData?.token_source || 'env'}
+                        </span>
+                        <button className="status-action" onClick={handleRefreshToken} disabled={refreshTokenMutation.isPending}>
+                            ↻
                         </button>
                     </div>
-                    <div className="card-body">
-                        <div className="protection-grid">
-                            <div className="protection-item">
-                                <span className="protection-label">Token Source</span>
-                                <span className="protection-value">{tokenData.token_source}</span>
-                            </div>
-                            <div className="protection-item">
-                                <span className="protection-label">Auto Refresh</span>
-                                <span className="protection-value">Every 6 hours</span>
-                            </div>
-                            {tokenData.token_info?.expires_at && (
-                                <div className="protection-item">
-                                    <span className="protection-label">Expires At</span>
-                                    <span className="protection-value">
-                                        {new Date(tokenData.token_info.expires_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
-                                    </span>
-                                </div>
-                            )}
-                            {tokenData.last_refresh && (
-                                <div className="protection-item">
-                                    <span className="protection-label">Last Refresh</span>
-                                    <span className="protection-value">
-                                        {new Date(tokenData.last_refresh).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
-                                    </span>
-                                </div>
-                            )}
-                            {tokenData.last_refresh_result && (
-                                <div className="protection-item">
-                                    <span className="protection-label">Status</span>
-                                    <span className={`protection-value ${tokenData.last_refresh_result.status === 'success' ? 'positive' : 'negative'}`}>
-                                        {tokenData.last_refresh_result.status === 'success' ? '✓ Active' : '✗ ' + (tokenData.last_refresh_result.error || 'Error')}
-                                    </span>
-                                </div>
-                            )}
+                    <div className="status-item">
+                        <span className="status-label">Scheduler</span>
+                        <span className="status-value ok">
+                            {schedulerData?.jobs?.length || 0} jobs
+                        </span>
+                    </div>
+                    <div className="status-item">
+                        <span className="status-label">Last Refresh</span>
+                        <span className="status-value">
+                            {new Date().toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                    </div>
+                </footer>
+            </main>
+
+            {/* Confirmation Dialog */}
+            {confirmDialog.open && (
+                <div className="modal-overlay" onClick={closeConfirmDialog}>
+                    <div className="confirm-dialog" onClick={(e) => e.stopPropagation()}>
+                        <div className="confirm-icon">
+                            {confirmDialog.type === 'protect' ? '⛊' : '⚠'}
+                        </div>
+                        <h3 className="confirm-title">
+                            {confirmDialog.type === 'protect'
+                                ? 'Activate Protection?'
+                                : 'Cancel All Orders?'}
+                        </h3>
+                        <p className="confirm-message">
+                            {confirmDialog.type === 'protect'
+                                ? `This will place protective stop-loss orders for ${holdings.filter(h => !enrichedHoldings.find(e => e.symbol === h.symbol)?.isProtected).length || 'all unprotected'} holdings using Forever (GTT) orders.`
+                                : `This will cancel all ${orders.length} active GTT protection orders. Your holdings will be unprotected.`}
+                        </p>
+                        <div className="confirm-actions">
+                            <button className="confirm-btn cancel" onClick={closeConfirmDialog}>
+                                Cancel
+                            </button>
+                            <button
+                                className={`confirm-btn ${confirmDialog.type === 'protect' ? 'primary' : 'danger'}`}
+                                onClick={confirmDialog.type === 'protect' ? handleRunProtection : handleCancelAll}
+                            >
+                                {confirmDialog.type === 'protect' ? 'Yes, Protect' : 'Yes, Cancel All'}
+                            </button>
                         </div>
                     </div>
                 </div>

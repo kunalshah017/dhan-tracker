@@ -47,7 +47,7 @@ export async function api<T>(
 export const fetchHoldings = (): Promise<HoldingsResponse> =>
   api<HoldingsResponse>("/api/holdings");
 export const fetchOrders = (): Promise<OrdersResponse> =>
-  api<OrdersResponse>("/api/orders/regular");
+  api<OrdersResponse>("/api/orders/protection");
 export const fetchProtectionStatus = (): Promise<ProtectionStatus> =>
   api<ProtectionStatus>("/api/protection/status");
 export const fetchSchedulerStatus = (): Promise<SchedulerStatus> =>

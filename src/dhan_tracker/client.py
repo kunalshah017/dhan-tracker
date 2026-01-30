@@ -385,7 +385,11 @@ class DhanClient:
 
     def place_protective_order(self, order: ProtectiveOrder) -> dict:
         """
-        Place a protective super order.
+        Place a protective Forever Order (GTT).
+
+        Forever Orders are trigger-based orders that activate when price hits
+        the trigger level. Perfect for protective stop losses on existing holdings
+        without the bracket order constraints of Super Orders.
 
         Args:
             order: ProtectiveOrder configuration
@@ -393,10 +397,28 @@ class DhanClient:
         Returns:
             Order response with orderId and orderStatus
         """
-        payload = order.to_super_order_request(self.config.client_id)
+        # Use Forever Order for protective stop loss (no bracket requirement)
+        payload = {
+            "dhanClientId": self.config.client_id,
+            "orderFlag": "SINGLE",  # Single leg GTT order
+            "transactionType": "SELL",
+            "exchangeSegment": order.exchange_segment.upper(),
+            "productType": order.product_type.upper(),
+            "orderType": "MARKET",  # Market order when triggered
+            "validity": "DAY",
+            "securityId": order.security_id,
+            "quantity": order.quantity,
+            "disclosedQuantity": 0,
+            "price": 0,  # Market order - execute at best available
+            "triggerPrice": order.stop_loss_price,  # Trigger when price hits SL
+        }
+
         logger.info(
-            f"Placing protective order for {order.trading_symbol}: qty={order.quantity}")
-        response = self._request("POST", "/super/orders", json=payload)
+            f"Placing Forever Order (GTT) for {order.trading_symbol}: "
+            f"qty={order.quantity}, trigger@{order.stop_loss_price}"
+        )
+        response = self._request("POST", "/forever/orders", json=payload)
+        logger.info(f"Forever Order response: {response}")
         return response
 
     def modify_super_order(
@@ -640,11 +662,11 @@ class DhanClient:
         token_data = response.json()
 
         # Extract the new access token from the response
-        # The Dhan API may return the token in different formats
+        # The Dhan API returns the token as 'token' field
         new_token = None
         if isinstance(token_data, dict):
             # Try common key names for the access token
-            new_token = token_data.get(
+            new_token = token_data.get("token") or token_data.get(
                 "access_token") or token_data.get("accessToken")
 
         if not new_token:
@@ -684,3 +706,196 @@ class DhanClient:
             New token response
         """
         return self._refresh_token_internal()
+
+    # ==================== Forever Orders (GTT) ====================
+    # Forever Orders are trigger-based orders that remain active until triggered or cancelled.
+    # They're perfect for protective stop losses on existing holdings (no bracket requirement).
+
+    def place_forever_order(
+        self,
+        security_id: str,
+        exchange_segment: str,
+        transaction_type: str,  # BUY or SELL
+        product_type: str,  # CNC, INTRADAY, etc.
+        order_type: str,  # LIMIT or MARKET
+        quantity: int,
+        trigger_price: float,
+        price: float = 0,  # 0 for market orders
+        order_flag: str = "SINGLE",  # SINGLE or OCO
+        disclosed_quantity: int = 0,
+        validity: str = "DAY",
+        # For OCO orders
+        price1: float = 0,
+        trigger_price1: float = 0,
+        leg_name: str = "",  # ENTRY_LEG, TARGET_LEG, STOP_LOSS_LEG
+    ) -> dict:
+        """
+        Place a Forever Order (Good Till Triggered).
+
+        Forever Orders wait for trigger price to be hit before becoming active.
+        Perfect for protective stop losses without bracket order constraints.
+
+        Args:
+            security_id: The security ID
+            exchange_segment: NSE_EQ, BSE_EQ, etc.
+            transaction_type: BUY or SELL
+            product_type: CNC, INTRADAY, MARGIN, CO, BO
+            order_type: LIMIT or MARKET (execution type after trigger)
+            quantity: Order quantity
+            trigger_price: Price at which order gets triggered
+            price: Limit price (0 for market orders)
+            order_flag: SINGLE (one leg) or OCO (one-cancels-other)
+            disclosed_quantity: Disclosed quantity
+            validity: DAY or IOC
+            price1: Second leg price (for OCO)
+            trigger_price1: Second leg trigger price (for OCO)
+            leg_name: ENTRY_LEG, TARGET_LEG, or STOP_LOSS_LEG
+
+        Returns:
+            API response with orderId
+        """
+        payload = {
+            "dhanClientId": self.config.client_id,
+            "orderFlag": order_flag,
+            "transactionType": transaction_type.upper(),
+            "exchangeSegment": exchange_segment.upper(),
+            "productType": product_type.upper(),
+            "orderType": order_type.upper(),
+            "validity": validity.upper(),
+            "securityId": security_id,
+            "quantity": quantity,
+            "disclosedQuantity": disclosed_quantity,
+            "price": price,
+            "triggerPrice": trigger_price,
+        }
+
+        # Add OCO-specific fields if needed
+        if order_flag == "OCO":
+            payload["price1"] = price1
+            payload["triggerPrice1"] = trigger_price1
+            if leg_name:
+                payload["legName"] = leg_name
+
+        logger.info(
+            f"Placing Forever Order: {transaction_type} {quantity}x {security_id} "
+            f"trigger@{trigger_price} ({order_flag})"
+        )
+
+        response = self._request("POST", "/forever/orders", json=payload)
+        logger.info(f"Forever Order response: {response}")
+        return response
+
+    def get_forever_orders(self) -> list:
+        """
+        Get all pending Forever Orders.
+
+        Returns:
+            List of pending forever orders
+        """
+        logger.info("Fetching all Forever Orders")
+        # Try /forever/orders first (from API table), fallback to /forever/all
+        try:
+            response = self._request("GET", "/forever/orders")
+            return response if isinstance(response, list) else []
+        except DhanAPIError as e:
+            if e.status_code == 404:
+                # Try alternate endpoint
+                logger.info("Trying alternate endpoint /forever/all")
+                response = self._request("GET", "/forever/all")
+                return response if isinstance(response, list) else []
+            raise
+
+    def cancel_forever_order(self, order_id: str) -> dict:
+        """
+        Cancel a Forever Order.
+
+        Args:
+            order_id: The Forever Order ID to cancel
+
+        Returns:
+            API response
+        """
+        logger.info(f"Cancelling Forever Order: {order_id}")
+        response = self._request("DELETE", f"/forever/orders/{order_id}")
+        logger.info(f"Cancel Forever Order response: {response}")
+        return response
+
+    def modify_forever_order(
+        self,
+        order_id: str,
+        order_type: str,
+        leg_name: str,
+        quantity: int,
+        price: float,
+        trigger_price: float,
+        disclosed_quantity: int = 0,
+        validity: str = "DAY",
+    ) -> dict:
+        """
+        Modify an existing Forever Order.
+
+        Args:
+            order_id: The Forever Order ID to modify
+            order_type: LIMIT or MARKET
+            leg_name: ENTRY_LEG, TARGET_LEG, or STOP_LOSS_LEG
+            quantity: New quantity
+            price: New price
+            trigger_price: New trigger price
+            disclosed_quantity: New disclosed quantity
+            validity: DAY or IOC
+
+        Returns:
+            API response
+        """
+        payload = {
+            "dhanClientId": self.config.client_id,
+            "orderId": order_id,
+            "orderType": order_type.upper(),
+            "legName": leg_name,
+            "quantity": quantity,
+            "price": price,
+            "triggerPrice": trigger_price,
+            "disclosedQuantity": disclosed_quantity,
+            "validity": validity.upper(),
+        }
+
+        logger.info(
+            f"Modifying Forever Order {order_id}: trigger={trigger_price}")
+        response = self._request(
+            "PUT", f"/forever/orders/{order_id}", json=payload)
+        logger.info(f"Modify Forever Order response: {response}")
+        return response
+
+    def place_protective_forever_order(
+        self,
+        security_id: str,
+        quantity: int,
+        stop_loss_price: float,
+        exchange_segment: str = "NSE_EQ",
+    ) -> dict:
+        """
+        Place a protective stop-loss Forever Order for existing holdings.
+
+        This is a convenience method that creates a SINGLE Forever Order
+        to sell holdings when price drops to the stop loss level.
+
+        Args:
+            security_id: The security ID to protect
+            quantity: Number of shares to sell
+            stop_loss_price: Price at which to trigger the sell
+            exchange_segment: NSE_EQ or BSE_EQ
+
+        Returns:
+            API response with orderId
+        """
+        return self.place_forever_order(
+            security_id=security_id,
+            exchange_segment=exchange_segment,
+            transaction_type="SELL",
+            product_type="CNC",  # Cash and Carry for holdings
+            order_type="MARKET",  # Sell at market when triggered
+            quantity=quantity,
+            trigger_price=stop_loss_price,
+            price=0,  # Market order
+            order_flag="SINGLE",
+        )

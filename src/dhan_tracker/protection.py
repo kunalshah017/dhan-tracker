@@ -1,4 +1,4 @@
-"""Portfolio protection strategies using super orders."""
+"""Portfolio protection strategies using Forever Orders (GTT)."""
 
 import logging
 from dataclasses import dataclass
@@ -8,7 +8,8 @@ from typing import Optional
 from .client import DhanClient
 from .nse_client import NSEClient, NSEError
 from .upstox_client import UpstoxClient, UpstoxAPIError, MarketData
-from .models import Holding, SuperOrder, ProtectiveOrder
+from .models import Holding, SuperOrder, ProtectiveOrder, ForeverOrder
+
 
 logger = logging.getLogger(__name__)
 
@@ -565,15 +566,41 @@ class PortfolioProtector:
             f"Max Possible Loss: ₹{summary['total_max_loss']:.2f} ({summary['max_loss_percent']:.1f}% of invested)")
         print("=" * 80)
 
-    def get_existing_protection(self, holdings: list[Holding]) -> dict[str, SuperOrder]:
+    def get_existing_protection(self, holdings: list[Holding]) -> dict[str, ForeverOrder]:
         """
-        Get existing super orders for holdings.
+        Get existing Forever Orders (GTT) for holdings.
 
         Args:
             holdings: List of holdings to check
 
         Returns:
-            Dictionary mapping security_id to existing super order
+            Dictionary mapping security_id to existing Forever Order
+        """
+        security_ids = {h.security_id for h in holdings}
+        forever_orders = self.client.get_forever_orders()
+
+        existing = {}
+        for order_data in forever_orders:
+            order = ForeverOrder.from_api_response(order_data)
+            if (
+                order.security_id in security_ids
+                and order.transaction_type == "SELL"
+                and order.order_status in ["PENDING", "TRANSIT", "PART_TRADED"]
+            ):
+                existing[order.security_id] = order
+
+        return existing
+
+    def get_existing_super_orders(self, holdings: list[Holding]) -> dict[str, SuperOrder]:
+        """
+        Get existing Super Orders for holdings.
+        DEPRECATED: Use get_existing_protection() for Forever Orders.
+
+        Args:
+            holdings: List of holdings to check
+
+        Returns:
+            Dictionary mapping security_id to existing Super Order
         """
         security_ids = {h.security_id for h in holdings}
         super_orders = self.client.get_super_orders()
@@ -591,7 +618,7 @@ class PortfolioProtector:
 
     def cancel_existing_orders(self, holdings: list[Holding]) -> int:
         """
-        Cancel all existing protective orders for holdings.
+        Cancel all existing protective Forever Orders for holdings.
 
         Args:
             holdings: List of holdings
@@ -604,9 +631,9 @@ class PortfolioProtector:
 
         for security_id, order in existing.items():
             try:
-                self.client.cancel_super_order(order.order_id)
+                self.client.cancel_forever_order(order.order_id)
                 logger.info(
-                    f"Cancelled order {order.order_id} for {order.trading_symbol}")
+                    f"Cancelled Forever Order {order.order_id} for {order.trading_symbol}")
                 cancelled += 1
             except Exception as e:
                 logger.warning(f"Failed to cancel order {order.order_id}: {e}")
@@ -734,12 +761,12 @@ class PortfolioProtector:
         self,
         holding: Holding,
         ltp: float,
-        existing_orders: dict[str, SuperOrder],
+        existing_orders: dict[str, ForeverOrder],
         force: bool = False,
         high_52week: float | None = None,
     ) -> ProtectionResult:
         """
-        Place a protective super order for a single holding.
+        Place a protective Forever Order (GTT) for a single holding.
 
         Strategy: Tiered Cost-Based Protection
         ---------------------------------------
@@ -750,7 +777,7 @@ class PortfolioProtector:
         Args:
             holding: Holding to protect
             ltp: Current LTP for the holding
-            existing_orders: Dictionary of existing super orders
+            existing_orders: Dictionary of existing Forever Orders
             force: If True, update existing orders with new prices
             high_52week: (Unused, kept for compatibility)
 
@@ -801,11 +828,12 @@ class PortfolioProtector:
         pnl_percent = ((ltp - cost_price) / cost_price *
                        100) if cost_price > 0 else 0
 
-        # Check for existing protection
+        # Check for existing protection (Forever Order)
         existing_order = existing_orders.get(holding.security_id)
 
         if existing_order and not force:
-            sl_price = existing_order.stop_loss_leg.price if existing_order.stop_loss_leg else 0
+            # Forever Order stores trigger price directly
+            sl_price = existing_order.trigger_price
             return ProtectionResult(
                 holding=holding,
                 success=True,
@@ -815,32 +843,23 @@ class PortfolioProtector:
                 stop_loss_price=sl_price,
             )
 
-        # If existing order and force=True, MODIFY instead of cancel+replace
+        # If existing order and force=True, MODIFY the Forever Order
         if existing_order and force:
             try:
-                # Modify the stop loss leg with new price based on current LTP
-                response = self.client.modify_super_order(
+                # Modify the Forever Order with new trigger price
+                response = self.client.modify_forever_order(
                     order_id=existing_order.order_id,
-                    leg_name="STOP_LOSS_LEG",
-                    stop_loss_price=new_stop_loss,
-                    trailing_jump=self.config.trailing_jump,
+                    order_type="MARKET",
+                    leg_name="ENTRY_LEG",  # Forever Orders have ENTRY_LEG
+                    quantity=holding.available_qty,
+                    price=0,  # Market order
+                    trigger_price=new_stop_loss,
                 )
                 order_status = response.get("orderStatus", "")
 
-                # Also modify target leg if needed
-                if new_target > 0:
-                    try:
-                        self.client.modify_super_order(
-                            order_id=existing_order.order_id,
-                            leg_name="TARGET_LEG",
-                            target_price=new_target,
-                        )
-                    except Exception as e:
-                        logger.warning(f"Failed to modify target leg: {e}")
-
                 logger.info(
-                    f"Modified order {existing_order.order_id} for {holding.trading_symbol}: "
-                    f"SL ₹{existing_order.stop_loss_leg.price if existing_order.stop_loss_leg else 0:.2f} → ₹{new_stop_loss:.2f}"
+                    f"Modified Forever Order {existing_order.order_id} for {holding.trading_symbol}: "
+                    f"SL ₹{existing_order.trigger_price:.2f} → ₹{new_stop_loss:.2f}"
                 )
 
                 return ProtectionResult(
@@ -854,8 +873,13 @@ class PortfolioProtector:
                 )
 
             except Exception as e:
-                logger.warning(f"Failed to modify order, will place new: {e}")
-                # Fall through to place new order
+                logger.warning(
+                    f"Failed to modify order, will cancel and place new: {e}")
+                # Cancel and fall through to place new order
+                try:
+                    self.client.cancel_forever_order(existing_order.order_id)
+                except Exception as cancel_err:
+                    logger.warning(f"Failed to cancel order: {cancel_err}")
 
         # Create and place protective order (only if no existing order or modify failed)
         protective_order = self.create_protective_order(
@@ -959,14 +983,21 @@ class PortfolioProtector:
         # Fetch LTP for current values
         ltp_map = self.fetch_ltp_for_holdings(holdings)
 
-        super_orders = self.client.get_super_orders()
+        # Get Forever Orders for protection status
+        try:
+            forever_orders = self.client.get_forever_orders()
+            forever_order_list = [
+                ForeverOrder.from_api_response(o) for o in forever_orders]
+        except Exception as e:
+            logger.warning(f"Failed to fetch Forever Orders: {e}")
+            forever_order_list = []
 
-        # Find holdings with protection
+        # Find holdings with protection (Forever Orders)
         protected_securities = {
             o.security_id: o
-            for o in super_orders
+            for o in forever_order_list
             if o.transaction_type == "SELL"
-            and o.order_status in ["PENDING", "TRANSIT", "PART_TRADED"]
+            and o.order_status in ["PENDING", "TRANSIT", "PART_TRADED", "CONFIRM"]
         }
 
         protected_holdings = []
@@ -997,7 +1028,7 @@ class PortfolioProtector:
             "protection_percent": (protected_value / total_value * 100) if total_value > 0 else 0,
             "protected_holdings": protected_holdings,
             "unprotected_holdings": unprotected_holdings,
-            "active_super_orders": super_orders,
+            "active_forever_orders": forever_order_list,
             "ltp_map": ltp_map,
             "protected_securities": protected_securities,
         }

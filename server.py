@@ -336,8 +336,8 @@ def run_dynamic_protection_update():
         # Fetch fresh market data
         protector.fetch_all_market_data(holdings)
 
-        # Get existing Super Orders (DDPI orders placed at 8:30 AM)
-        existing_super_orders = protector.get_existing_protection(holdings)
+        # Get existing Forever Orders (GTT orders placed for protection)
+        existing_forever_orders = protector.get_existing_protection(holdings)
 
         updates_made = 0
         for holding in holdings:
@@ -349,10 +349,10 @@ def run_dynamic_protection_update():
             new_sl, tier_desc = protector.calculate_tiered_stop_loss(
                 cost_price, ltp)
 
-            # Check if there's an existing Super Order
-            existing = existing_super_orders.get(holding.security_id)
+            # Check if there's an existing Forever Order
+            existing = existing_forever_orders.get(holding.security_id)
             if existing:
-                old_trigger = existing.stop_loss_leg.price if existing.stop_loss_leg else 0
+                old_trigger = existing.trigger_price  # Forever Order uses trigger_price
 
                 # Only update if SL changed by more than ₹0.50 or 0.5%
                 sl_change = abs(new_sl - old_trigger)
@@ -361,11 +361,14 @@ def run_dynamic_protection_update():
 
                 if sl_change > 0.50 and sl_change_pct > 0.5:
                     try:
-                        # Modify Super Order's stop loss leg
-                        client.modify_super_order(
+                        # Modify Forever Order's trigger price
+                        client.modify_forever_order(
                             order_id=existing.order_id,
-                            leg_name="STOP_LOSS_LEG",
-                            stop_loss_price=new_sl,
+                            order_type="MARKET",
+                            leg_name="ENTRY_LEG",
+                            quantity=holding.available_qty,
+                            price=0,
+                            trigger_price=new_sl,
                         )
                         logger.info(
                             f"✓ Updated {holding.trading_symbol}: "
@@ -378,6 +381,11 @@ def run_dynamic_protection_update():
                 else:
                     logger.debug(
                         f"{holding.trading_symbol}: No significant change (SL ₹{old_trigger:.2f})")
+
+        if updates_made > 0:
+            logger.info(f"Updated {updates_made} protection orders")
+        else:
+            logger.info("No protection updates needed")
 
         if updates_made > 0:
             logger.info(f"Updated {updates_made} protection orders")
@@ -773,7 +781,7 @@ async def run_protection(force: bool = True, background_tasks: BackgroundTasks =
 
 @app.post("/api/protection/cancel", dependencies=[Depends(verify_password)])
 async def cancel_protection():
-    """Cancel all existing protection orders (both Super Orders and regular AMO orders)."""
+    """Cancel all existing protection orders (both Forever Orders and regular AMO orders)."""
     try:
         config = DhanConfig.load()
         client = DhanClient(config)
@@ -782,8 +790,8 @@ async def cancel_protection():
         protector = PortfolioProtector(client, protection_config)
         holdings = client.get_holdings()
 
-        # Cancel Super Orders
-        super_cancelled = protector.cancel_existing_orders(holdings)
+        # Cancel Forever Orders (GTT protective orders)
+        forever_cancelled = protector.cancel_existing_orders(holdings)
 
         # Cancel pending regular orders (AMO SL orders)
         amo_cancelled = 0
@@ -811,13 +819,13 @@ async def cancel_protection():
         except Exception as e:
             logger.warning(f"Failed to fetch/cancel regular orders: {e}")
 
-        total_cancelled = super_cancelled + amo_cancelled
+        total_cancelled = forever_cancelled + amo_cancelled
 
         return {
             "status": "success",
-            "message": f"Cancelled {total_cancelled} protection orders ({super_cancelled} Super, {amo_cancelled} AMO)",
+            "message": f"Cancelled {total_cancelled} protection orders ({forever_cancelled} Forever, {amo_cancelled} AMO)",
             "cancelled_count": total_cancelled,
-            "super_orders_cancelled": super_cancelled,
+            "forever_orders_cancelled": forever_cancelled,
             "amo_orders_cancelled": amo_cancelled,
         }
 
@@ -904,32 +912,99 @@ async def run_amo_protection_api(amo_time: str = "OPEN"):
 
 @app.get("/api/orders", dependencies=[Depends(verify_password)])
 async def get_orders():
-    """Get all super orders."""
+    """Get all Forever Orders (GTT) and Super Orders."""
     try:
+        from dhan_tracker.models import ForeverOrder
+
         config = DhanConfig.load()
         client = DhanClient(config)
-        orders = client.get_super_orders()
+
+        # Get Forever Orders (new protection method)
+        forever_orders_raw = client.get_forever_orders()
+        forever_orders = [ForeverOrder.from_api_response(
+            o) for o in forever_orders_raw]
+
+        # Get Super Orders (legacy)
+        super_orders = client.get_super_orders()
 
         return {
-            "count": len(orders),
-            "orders": [
-                {
-                    "order_id": o.order_id,
-                    "symbol": o.trading_symbol,
-                    "quantity": o.quantity,
-                    "transaction_type": o.transaction_type,
-                    "status": o.order_status,
-                    "stop_loss": o.stop_loss_leg.price if o.stop_loss_leg else None,
-                    "target": o.target_leg.price if o.target_leg else None,
-                }
-                for o in orders
-            ],
+            "forever_orders": {
+                "count": len(forever_orders),
+                "orders": [
+                    {
+                        "order_id": o.order_id,
+                        "symbol": o.trading_symbol,
+                        "quantity": o.quantity,
+                        "transaction_type": o.transaction_type,
+                        "status": o.order_status,
+                        "trigger_price": o.trigger_price,
+                        "order_type": o.order_type,
+                    }
+                    for o in forever_orders
+                ],
+            },
+            "super_orders": {
+                "count": len(super_orders),
+                "orders": [
+                    {
+                        "order_id": o.order_id,
+                        "symbol": o.trading_symbol,
+                        "quantity": o.quantity,
+                        "transaction_type": o.transaction_type,
+                        "status": o.order_status,
+                        "stop_loss": o.stop_loss_leg.price if o.stop_loss_leg else None,
+                        "target": o.target_leg.price if o.target_leg else None,
+                    }
+                    for o in super_orders
+                ],
+            },
         }
 
     except DhanAPIError as e:
         raise HTTPException(status_code=e.status_code or 500, detail=str(e))
     except Exception as e:
         logger.error(f"Error fetching orders: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/orders/protection", dependencies=[Depends(verify_password)])
+async def get_protection_orders():
+    """Get all pending Forever Orders (GTT protection orders)."""
+    try:
+        from dhan_tracker.models import ForeverOrder
+
+        config = DhanConfig.load()
+        client = DhanClient(config)
+
+        forever_orders_raw = client.get_forever_orders()
+        forever_orders = [ForeverOrder.from_api_response(
+            o) for o in forever_orders_raw]
+
+        # Filter to only pending SELL orders (protection orders) - exclude cancelled
+        pending_orders = [
+            {
+                "orderId": o.order_id,
+                "tradingSymbol": o.trading_symbol,
+                "quantity": o.quantity,
+                "price": o.price,
+                "triggerPrice": o.trigger_price,
+                "transactionType": o.transaction_type,
+                "orderStatus": o.order_status,
+                "orderType": o.order_type,
+            }
+            for o in forever_orders
+            if o.order_status not in ["CANCELLED", "REJECTED", "TRADED", "EXPIRED"]
+        ]
+
+        return {
+            "count": len(pending_orders),
+            "orders": pending_orders,
+        }
+
+    except DhanAPIError as e:
+        raise HTTPException(status_code=e.status_code or 500, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error fetching protection orders: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -251,19 +251,72 @@ class ProtectiveOrder:
     product_type: str = "CNC"
 
     def to_super_order_request(self, client_id: str) -> dict:
-        """Convert to super order API request."""
+        """Convert to super order API request.
+
+        For protective SELL orders on existing holdings:
+        - Use STOP_LOSS_MARKET: triggers when price DROPS to stop_loss_price
+        - No target needed (targetPrice = 0)
+        - price = 0 for market execution after trigger
+        """
         return {
             "dhanClientId": client_id,
             "correlationId": f"protect_{self.security_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}",
             "transactionType": "SELL",
             "exchangeSegment": self.exchange_segment,
             "productType": self.product_type,
-            "orderType": "LIMIT",
+            "orderType": "STOP_LOSS_MARKET",
             "securityId": self.security_id,
             "quantity": self.quantity,
-            "price": self.entry_price,
-            "targetPrice": self.target_price,
-            "stopLossPrice": self.stop_loss_price,
+            "price": 0,  # Market order after trigger
+            "triggerPrice": self.stop_loss_price,  # Trigger when price drops to this
+            "targetPrice": 0,  # Disabled for protective orders
+            "stopLossPrice": 0,  # Not used for SL-M entry
             "trailingJump": self.trailing_jump,
         }
 
+
+@dataclass
+class ForeverOrder:
+    """Represents a Forever Order (GTT - Good Till Triggered).
+
+    Forever Orders are trigger-based orders that wait until price hits
+    the trigger level before becoming active. Perfect for protective
+    stop losses on existing holdings without bracket order constraints.
+    """
+
+    dhan_client_id: str
+    order_id: str
+    order_flag: str  # SINGLE or OCO
+    order_status: str
+    transaction_type: str
+    exchange_segment: str
+    product_type: str
+    order_type: str
+    trading_symbol: str
+    security_id: str
+    quantity: int
+    price: float  # Execution price (0 for market)
+    trigger_price: float  # Trigger level
+    create_time: str = ""
+    update_time: str = ""
+
+    @classmethod
+    def from_api_response(cls, data: dict) -> "ForeverOrder":
+        """Create ForeverOrder from API response."""
+        return cls(
+            dhan_client_id=data.get("dhanClientId", ""),
+            order_id=data.get("orderId", ""),
+            order_flag=data.get("orderFlag", "SINGLE"),
+            order_status=data.get("orderStatus", ""),
+            transaction_type=data.get("transactionType", ""),
+            exchange_segment=data.get("exchangeSegment", ""),
+            product_type=data.get("productType", ""),
+            order_type=data.get("orderType", ""),
+            trading_symbol=data.get("tradingSymbol", ""),
+            security_id=data.get("securityId", ""),
+            quantity=data.get("quantity", 0),
+            price=data.get("price", 0.0),
+            trigger_price=data.get("triggerPrice", 0.0),
+            create_time=data.get("createTime", ""),
+            update_time=data.get("updateTime", ""),
+        )

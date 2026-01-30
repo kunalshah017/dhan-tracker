@@ -216,20 +216,35 @@ class NSEClient:
                     else:
                         discount_premium = 0
 
+                    # Parse volume - can be string with commas or int
+                    qty_raw = etf.get("qty", "0")
+                    if isinstance(qty_raw, str):
+                        qty_raw = qty_raw.replace(",", "")
+                    volume = int(float(qty_raw) if qty_raw else 0)
+
+                    # Parse turnover (traded value) - convert from raw value to Crores
+                    trd_val_raw = etf.get("trdVal", 0)
+                    if isinstance(trd_val_raw, str):
+                        trd_val_raw = trd_val_raw.replace(",", "")
+                    # Convert to Cr
+                    turnover = float(trd_val_raw) / \
+                        10000000 if trd_val_raw else 0
+
                     result.append(ETFData(
                         symbol=etf.get("symbol", ""),
-                        underlying=etf.get("underlying", ""),
+                        underlying=etf.get("assets", "") or etf.get(
+                            "underlying", ""),
                         ltp=ltp,
                         nav=nav,
-                        change=float(etf.get("change", 0) or 0),
-                        pchange=float(etf.get("pChange", 0) or 0),
-                        volume=int(etf.get("tradedQuantity",
-                                   "0").replace(",", "") or 0),
-                        turnover=float(etf.get("turnOver", 0) or 0),
+                        change=float(etf.get("chn", 0) or 0),
+                        pchange=float(etf.get("per", 0) or 0),
+                        volume=volume,
+                        turnover=round(turnover, 2),
                         week52_high=float(etf.get("wkhi", 0) or 0),
                         week52_low=float(etf.get("wklo", 0) or 0),
                         discount_premium=round(discount_premium, 2),
-                        isin=etf.get("isinCode", ""),
+                        isin=etf.get("meta", {}).get(
+                            "isin", "") or etf.get("isinCode", ""),
                     ))
                 except (ValueError, TypeError, KeyError) as e:
                     logger.warning(
