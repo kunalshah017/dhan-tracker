@@ -403,15 +403,15 @@ async def lifespan(app: FastAPI):
         logger.info(
             "Database not configured - using environment variables for token")
 
-    # Schedule token refresh every 12 hours (well before 24-hour expiry)
+    # Schedule token refresh every 6 hours (well before 24-hour expiry)
     # This is CRITICAL: refresh must happen BEFORE token expires
     # because /v2/RenewToken requires a VALID token to work
     scheduler.add_job(
         refresh_dhan_token,
         'interval',
-        hours=12,
+        hours=6,
         id="token_refresh",
-        name="Proactive Token Refresh (every 12 hours)",
+        name="Proactive Token Refresh (every 6 hours)",
         replace_existing=True,
     )
 
@@ -1013,6 +1013,67 @@ async def manual_token_refresh():
     return {
         "status": "completed",
         "result": last_token_refresh_result,
+    }
+
+
+class UpdateApiKeyRequest(BaseModel):
+    access_token: str
+    client_id: Optional[str] = None
+
+
+@app.post("/api/token/update", dependencies=[Depends(verify_password)])
+async def update_api_key(request: UpdateApiKeyRequest):
+    """
+    Update the Dhan API access token manually.
+
+    Use this when your token has expired and you need to enter a new one
+    from the Dhan API portal. The new token will be saved to the database.
+    """
+    from dhan_tracker.database import save_dhan_token, is_database_available
+    from datetime import timedelta
+
+    if not is_database_available():
+        raise HTTPException(
+            status_code=500, detail="Database not available for token storage")
+
+    # Get client_id from request or existing config
+    client_id = request.client_id
+    if not client_id:
+        try:
+            config = DhanConfig.load()
+            client_id = config.client_id
+        except Exception:
+            raise HTTPException(
+                status_code=400, detail="Client ID not provided and cannot be determined")
+
+    # Save the new token with 24-hour expiry
+    expires_at = datetime.utcnow() + timedelta(hours=24)
+    success = save_dhan_token(
+        access_token=request.access_token,
+        client_id=client_id,
+        expires_at=expires_at
+    )
+
+    if not success:
+        raise HTTPException(
+            status_code=500, detail="Failed to save token to database")
+
+    # Update global tracking
+    global last_token_refresh, last_token_refresh_result
+    last_token_refresh = datetime.now(IST)
+    last_token_refresh_result = {
+        "status": "success",
+        "timestamp": last_token_refresh.isoformat(),
+        "message": "Token updated manually",
+        "source": "manual_entry",
+    }
+
+    logger.info(f"API token updated manually for client {client_id}")
+
+    return {
+        "status": "success",
+        "message": "API token updated successfully",
+        "expires_at": expires_at.isoformat(),
     }
 
 

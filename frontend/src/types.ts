@@ -78,3 +78,21 @@ export interface ApiResponse {
   message: string;
   status?: string;
 }
+
+export interface TokenStatus {
+  database_enabled: boolean;
+  token_source: string;
+  last_refresh: string | null;
+  last_refresh_result: {
+    status: string;
+    timestamp: string;
+    message?: string;
+    error?: string;
+  } | null;
+  token_info?: {
+    stored_at: string | null;
+    expires_at: string | null;
+    client_id: string;
+    token_length: number;
+  };
+}

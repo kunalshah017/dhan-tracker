@@ -1,6 +1,6 @@
 import { Link } from 'react-router-dom';
 import { useAuthStore } from '../store';
-import { useHoldings, useOrders, useProtectionStatus, useSchedulerStatus, useRunAmoProtection, useCancelAllOrders } from '../hooks';
+import { useHoldings, useOrders, useProtectionStatus, useSchedulerStatus, useRunAmoProtection, useCancelAllOrders, useTokenStatus, useRefreshToken } from '../hooks';
 import { formatCurrency } from '../utils';
 import { useToast, ToastContainer } from '../components/Toast';
 
@@ -12,15 +12,18 @@ export function Portfolio() {
     const { data: ordersData, isLoading: ordersLoading, refetch: refetchOrders } = useOrders();
     const { data: protectionData, refetch: refetchProtection } = useProtectionStatus();
     const { data: schedulerData, refetch: refetchScheduler } = useSchedulerStatus();
+    const { data: tokenData, refetch: refetchToken } = useTokenStatus();
 
     const runAmoMutation = useRunAmoProtection();
     const cancelMutation = useCancelAllOrders();
+    const refreshTokenMutation = useRefreshToken();
 
     const refreshAll = () => {
         refetchHoldings();
         refetchOrders();
         refetchProtection();
         refetchScheduler();
+        refetchToken();
     };
 
     const handleRunAmo = async () => {
@@ -38,6 +41,16 @@ export function Portfolio() {
             toast.success(result.message || 'All orders cancelled');
         } catch (err) {
             toast.error(err instanceof Error ? err.message : 'Failed to cancel orders');
+        }
+    };
+
+    const handleRefreshToken = async () => {
+        try {
+            await refreshTokenMutation.mutateAsync();
+            toast.success('API token refreshed successfully');
+            refetchToken();
+        } catch (err) {
+            toast.error(err instanceof Error ? err.message : 'Failed to refresh token');
         }
     };
 
@@ -228,6 +241,58 @@ export function Portfolio() {
                                     </div>
                                 </div>
                             ))}
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* API Token Status */}
+            {tokenData && (
+                <div className="card">
+                    <div className="card-header">
+                        <h2 className="card-title">🔑 API Token Status</h2>
+                        <button
+                            className="btn btn-primary btn-sm"
+                            onClick={handleRefreshToken}
+                            disabled={refreshTokenMutation.isPending}
+                        >
+                            {refreshTokenMutation.isPending ? 'Refreshing...' : '🔄 Refresh Token'}
+                        </button>
+                    </div>
+                    <div className="card-body">
+                        <div className="protection-grid">
+                            <div className="protection-item">
+                                <span className="protection-label">Token Source</span>
+                                <span className="protection-value">{tokenData.token_source}</span>
+                            </div>
+                            <div className="protection-item">
+                                <span className="protection-label">Auto Refresh</span>
+                                <span className="protection-value">Every 6 hours</span>
+                            </div>
+                            {tokenData.token_info?.expires_at && (
+                                <div className="protection-item">
+                                    <span className="protection-label">Expires At</span>
+                                    <span className="protection-value">
+                                        {new Date(tokenData.token_info.expires_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                                    </span>
+                                </div>
+                            )}
+                            {tokenData.last_refresh && (
+                                <div className="protection-item">
+                                    <span className="protection-label">Last Refresh</span>
+                                    <span className="protection-value">
+                                        {new Date(tokenData.last_refresh).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}
+                                    </span>
+                                </div>
+                            )}
+                            {tokenData.last_refresh_result && (
+                                <div className="protection-item">
+                                    <span className="protection-label">Status</span>
+                                    <span className={`protection-value ${tokenData.last_refresh_result.status === 'success' ? 'positive' : 'negative'}`}>
+                                        {tokenData.last_refresh_result.status === 'success' ? '✓ Active' : '✗ ' + (tokenData.last_refresh_result.error || 'Error')}
+                                    </span>
+                                </div>
+                            )}
                         </div>
                     </div>
                 </div>

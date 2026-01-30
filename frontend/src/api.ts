@@ -7,6 +7,7 @@ import type {
   ETFResponse,
   BuyOrderRequest,
   ApiResponse,
+  TokenStatus,
 } from "./types";
 
 interface FetchOptions extends RequestInit {
@@ -67,4 +68,17 @@ export const buyEtf = (data: BuyOrderRequest): Promise<ApiResponse> =>
   api<ApiResponse>("/api/etf/buy", {
     method: "POST",
     body: JSON.stringify(data),
+  });
+
+// Token management APIs
+export const fetchTokenStatus = (): Promise<TokenStatus> =>
+  api<TokenStatus>("/api/token/status");
+
+export const refreshToken = (): Promise<ApiResponse> =>
+  api<ApiResponse>("/api/token/refresh", { method: "POST" });
+
+export const updateApiKey = (accessToken: string): Promise<ApiResponse> =>
+  api<ApiResponse>("/api/token/update", {
+    method: "POST",
+    body: JSON.stringify({ access_token: accessToken }),
   });

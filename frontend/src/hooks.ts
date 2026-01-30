@@ -8,6 +8,8 @@ import {
   runAmoProtection,
   cancelAllOrders,
   buyEtf,
+  fetchTokenStatus,
+  refreshToken,
 } from "./api";
 import type {
   HoldingsResponse,
@@ -17,6 +19,7 @@ import type {
   ETFResponse,
   BuyOrderRequest,
   ApiResponse,
+  TokenStatus,
 } from "./types";
 
 // Portfolio queries
@@ -93,6 +96,26 @@ export function useBuyEtf() {
     mutationFn: buyEtf,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["holdings"] });
+    },
+  });
+}
+
+// Token management
+export function useTokenStatus() {
+  return useQuery<TokenStatus>({
+    queryKey: ["tokenStatus"],
+    queryFn: fetchTokenStatus,
+    staleTime: 60000,
+  });
+}
+
+export function useRefreshToken() {
+  const queryClient = useQueryClient();
+
+  return useMutation<ApiResponse, Error>({
+    mutationFn: refreshToken,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["tokenStatus"] });
     },
   });
 }
